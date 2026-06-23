@@ -14,7 +14,16 @@ export async function saveAttempt(db: IDBDatabase, attempt: Attempt): Promise<vo
   })
 }
 
-export async function getAllAttempts(_db: IDBDatabase): Promise<Attempt[]> {
-  // TODO: Slice 5 实现查询所有记录
-  return []
+export async function getAllAttempts(db: IDBDatabase): Promise<Attempt[]> {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('attempts', 'readonly')
+    const store = tx.objectStore('attempts')
+    const req = store.getAll()
+    req.onsuccess = () => {
+      const results = req.result as Attempt[]
+      results.sort((a, b) => b.date.localeCompare(a.date))
+      resolve(results)
+    }
+    req.onerror = () => reject(req.error)
+  })
 }

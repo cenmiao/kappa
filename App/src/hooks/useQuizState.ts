@@ -4,6 +4,7 @@ import { useState, useCallback, useMemo } from 'react'
 import type { Question, AnswerRecord, Attempt } from '../types'
 import { getRandomQuestions, getAllQuestions, getQuestionsByIds } from '../db/questions'
 import { getWrongAnswersByType } from '../db/wrongAnswers'
+import { getProgress } from '../db/progress'
 
 export interface QuizState {
   questions: Question[]
@@ -13,6 +14,8 @@ export interface QuizState {
   currentAnswer: string
   totalQuestions: number
   answeredCount: number
+  /** 顺序模式下的起始题目位置（全局编号），用于保存进度 */
+  startIndex: number
 }
 
 interface QuizActions {
@@ -51,6 +54,7 @@ export default function useQuizState(): QuizState & QuizActions {
   const [currentIndex, setCurrentIndex] = useState(0)
   const [answers, setAnswers] = useState<Record<number, { userAnswer: string; isUncertain: boolean }>>({})
   const [isSubmitted, setIsSubmitted] = useState(false)
+  const [startIndex, setStartIndex] = useState(0)
 
   const totalQuestions = questions.length
 
@@ -116,16 +120,22 @@ export default function useQuizState(): QuizState & QuizActions {
         ...shuffle(wrongTfQs), ...shuffle(tfs),
       ]
     } else {
-      // 顺序模式：按 ID 升序，取前 80 题
+      // 顺序模式：按 ID 升序，从上次进度继续
       const all = await getAllQuestions(db)
       all.sort((a, b) => a.id - b.id)
-      picked = all.slice(0, 80)
+      const savedProgress = await getProgress(db)
+      let startIndex = 0
+      if (savedProgress !== null && savedProgress < all.length) {
+        startIndex = savedProgress
+      }
+      picked = all.slice(startIndex, startIndex + 80)
     }
 
     setQuestions(picked)
     setCurrentIndex(0)
     setAnswers({})
     setIsSubmitted(false)
+    setStartIndex(mode === 'sequential' ? startIndex : 0)
   }, [])
 
   /** 直接用给定题目列表初始化（复习模式） */
@@ -134,6 +144,7 @@ export default function useQuizState(): QuizState & QuizActions {
     setCurrentIndex(0)
     setAnswers({})
     setIsSubmitted(false)
+    setStartIndex(0)
   }, [])
 
   /** 当前题对象 */
@@ -313,6 +324,7 @@ export default function useQuizState(): QuizState & QuizActions {
     currentAnswer,
     totalQuestions,
     answeredCount,
+    startIndex,
     // 操作
     initQuiz,
     initWithQuestions,

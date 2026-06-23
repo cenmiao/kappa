@@ -5,7 +5,9 @@ import { getLoadState, getLoadError, loadQuestions, isQuestionBankReady } from '
 import { openDB } from '../db'
 import { saveAttempt } from '../db/attempts'
 import { upsertWrongAnswers } from '../db/wrongAnswers'
+import { saveProgress } from '../db/progress'
 import useQuizState from '../hooks/useQuizState'
+import { useBeforeUnload } from '../hooks/useBeforeUnload'
 import ConfirmModal from '../components/ConfirmModal'
 
 type PageState = 'loading' | 'error' | 'ready'
@@ -27,6 +29,9 @@ export default function QuizPage() {
   const [showConfirm, setShowConfirm] = useState(false)
 
   const quiz = useQuizState()
+
+  // ─── beforeunload：答题中离开拦截 ────────────────
+  useBeforeUnload(!quiz.isSubmitted && quiz.totalQuestions > 0)
 
   // ─── 题库加载（复用已有逻辑）──────────────────────
   const checkAndLoad = useCallback(async () => {
@@ -152,6 +157,11 @@ export default function QuizPage() {
         }))
       if (wrongItems.length > 0) {
         await upsertWrongAnswers(db, wrongItems)
+      }
+
+      // 顺序模式：保存下次续接位置
+      if (mode === 'sequential') {
+        await saveProgress(db, quiz.startIndex + quiz.totalQuestions)
       }
     } catch {
       // 保存失败不阻塞交卷流程
