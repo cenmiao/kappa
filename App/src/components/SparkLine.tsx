@@ -46,7 +46,6 @@ export default function SparkLine({ data }: { data: DataPoint[] }) {
               x={padLeft - 6}
               y={yScale(y) + 3}
               textAnchor="end"
-              className="text-[8px] fill-gray-400"
               style={{ fontSize: '8px', fill: '#9ca3af' }}
             >
               {y}

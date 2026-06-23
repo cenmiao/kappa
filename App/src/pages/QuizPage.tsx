@@ -159,9 +159,9 @@ export default function QuizPage() {
         await upsertWrongAnswers(db, wrongItems)
       }
 
-      // 顺序模式：保存下次续接位置
+      // 顺序模式：保存下次续接位置（当前题号 + 1）
       if (mode === 'sequential') {
-        await saveProgress(db, quiz.startIndex + quiz.totalQuestions)
+        await saveProgress(db, quiz.startIndex + quiz.currentIndex + 1)
       }
     } catch {
       // 保存失败不阻塞交卷流程

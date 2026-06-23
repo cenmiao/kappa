@@ -61,6 +61,7 @@ export default function useQuizState(): QuizState & QuizActions {
   /** 从 IndexedDB 出题 */
   const initQuiz = useCallback(async (db: IDBDatabase, mode: 'random' | 'sequential') => {
     let picked: Question[]
+    let resumeIndex = 0
 
     if (mode === 'random') {
       // —— 错题强化出题算法 ——
@@ -124,18 +125,18 @@ export default function useQuizState(): QuizState & QuizActions {
       const all = await getAllQuestions(db)
       all.sort((a, b) => a.id - b.id)
       const savedProgress = await getProgress(db)
-      let startIndex = 0
+      resumeIndex = 0
       if (savedProgress !== null && savedProgress < all.length) {
-        startIndex = savedProgress
+        resumeIndex = savedProgress
       }
-      picked = all.slice(startIndex, startIndex + 80)
+      picked = all.slice(resumeIndex, resumeIndex + 80)
     }
 
     setQuestions(picked)
     setCurrentIndex(0)
     setAnswers({})
     setIsSubmitted(false)
-    setStartIndex(mode === 'sequential' ? startIndex : 0)
+    setStartIndex(mode === 'sequential' ? resumeIndex : 0)
   }, [])
 
   /** 直接用给定题目列表初始化（复习模式） */
