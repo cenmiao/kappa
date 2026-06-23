@@ -1,8 +1,10 @@
 import { useState, useEffect, useCallback } from 'react'
-import { useSearchParams, useNavigate } from 'react-router-dom'
+import { useSearchParams, useNavigate, useLocation } from 'react-router-dom'
+import type { Question, Attempt } from '../types'
 import { getLoadState, getLoadError, loadQuestions, isQuestionBankReady } from '../db/loader'
 import { openDB } from '../db'
 import { saveAttempt } from '../db/attempts'
+import { upsertWrongAnswers } from '../db/wrongAnswers'
 import useQuizState from '../hooks/useQuizState'
 import ConfirmModal from '../components/ConfirmModal'
 
@@ -11,8 +13,13 @@ type PageState = 'loading' | 'error' | 'ready'
 export default function QuizPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const nav = useNavigate()
+  const location = useLocation()
   const mode = (searchParams.get('mode') ?? 'random') as 'random' | 'sequential'
   const simulateError = searchParams.get('loadError') === 'true'
+
+  // 复习模式：从路由 state 获取题目列表
+  const reviewQuestions = (location.state as { reviewQuestions?: Question[] } | null)?.reviewQuestions
+  const isReviewMode = reviewQuestions && reviewQuestions.length > 0
 
   const [pageState, setPageState] = useState<PageState>('loading')
   const [errorMsg, setErrorMsg] = useState('')
@@ -84,6 +91,13 @@ export default function QuizPage() {
     if (pageState !== 'ready') return
     let cancelled = false
 
+    // 复习模式：直接用传入的题目列表
+    if (isReviewMode && reviewQuestions) {
+      quiz.initWithQuestions(reviewQuestions)
+      setQuizReady(true)
+      return
+    }
+
     openDB()
       .then((db) => quiz.initQuiz(db, mode))
       .then(() => {
@@ -120,13 +134,25 @@ export default function QuizPage() {
     const attempt = quiz.submit()
     if (!attempt) return
 
-    // 补全 mode 信息（hook 内默认为 random，这里覆盖为实际值）
-    const finalAttempt = { ...attempt, mode }
+    // 补全 mode 信息（复习模式优先）
+    const actualMode: Attempt['mode'] = isReviewMode ? 'review' : mode
+    const finalAttempt = { ...attempt, mode: actualMode }
 
     // 持久化到 IndexedDB
     try {
       const db = await openDB()
       await saveAttempt(db, finalAttempt)
+
+      // 错题录入错题池
+      const wrongItems = finalAttempt.answers
+        .filter(a => !a.isCorrect)
+        .map(a => ({
+          questionId: a.questionId,
+          type: quiz.questions.find(q => q.id === a.questionId)!.type,
+        }))
+      if (wrongItems.length > 0) {
+        await upsertWrongAnswers(db, wrongItems)
+      }
     } catch {
       // 保存失败不阻塞交卷流程
     }
@@ -310,9 +336,12 @@ export default function QuizPage() {
             const isFlagged = a?.isUncertain
 
             let cellStyle = 'bg-gray-100 text-gray-400'
+            if (isFlagged && !isCurrent) {
+              cellStyle = 'bg-amber-100 text-amber-600'
+            }
             if (isCurrent) {
               cellStyle = 'ring-2 ring-indigo-400 ring-offset-1 bg-indigo-100 text-indigo-700 scale-110'
-            } else if (isAnswered) {
+            } else if (isAnswered && !isFlagged) {
               cellStyle = 'bg-green-100 text-green-700'
             }
 
@@ -320,11 +349,9 @@ export default function QuizPage() {
               <button
                 key={idx}
                 onClick={() => quiz.goTo(idx)}
-                className={`flex-shrink-0 w-7 h-7 rounded-md text-[10px] font-medium flex items-center justify-center transition-all ${cellStyle} ${
-                  isFlagged ? 'border-b-2 border-amber-400' : ''
-                }`}
+                className={`flex-shrink-0 w-7 h-7 rounded-md text-[10px] font-medium flex items-center justify-center transition-all ${cellStyle}`}
               >
-                {idx + 1}
+                {isFlagged ? '⚑' : idx + 1}
               </button>
             )
           })}

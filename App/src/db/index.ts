@@ -2,7 +2,7 @@
 // Slice 2+ 实现具体逻辑
 
 const DB_NAME = 'kappa-db'
-const DB_VERSION = 1
+const DB_VERSION = 2
 
 export async function openDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -15,6 +15,9 @@ export async function openDB(): Promise<IDBDatabase> {
       }
       if (!db.objectStoreNames.contains('attempts')) {
         db.createObjectStore('attempts', { keyPath: 'id' })
+      }
+      if (!db.objectStoreNames.contains('wrongAnswers')) {
+        db.createObjectStore('wrongAnswers', { keyPath: 'questionId' })
       }
     }
 

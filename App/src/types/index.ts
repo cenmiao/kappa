@@ -20,11 +20,18 @@ export interface AnswerRecord {
   isUncertain: boolean
 }
 
+// 错题池记录
+export interface WrongAnswer {
+  questionId: number
+  type: QuestionType
+  wrongCount: number
+}
+
 // 一次完整的练习记录
 export interface Attempt {
   id: string
   date: string
-  mode: 'random' | 'sequential'
+  mode: 'random' | 'sequential' | 'review'
   score: number
   total: number
   accuracy: number

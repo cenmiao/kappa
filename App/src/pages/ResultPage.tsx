@@ -284,6 +284,18 @@ export default function ResultPage() {
           </div>
         ) : (
           <>
+            {/* "针对复习" 按钮 */}
+            <button
+              onClick={() => {
+                const reviewIds = new Set(reviewList.map(r => r.questionId))
+                const reviewQs = questions.filter(q => reviewIds.has(q.id))
+                nav('/quiz', { state: { reviewQuestions: reviewQs } })
+              }}
+              className="w-full py-3 rounded-xl bg-gradient-to-r from-amber-400 to-orange-400 text-white text-sm font-medium active:from-amber-500 active:to-orange-500 transition-colors mb-3"
+            >
+              📌 针对这 {reviewList.length} 题重新练习
+            </button>
+
             <h3 className="text-sm font-semibold text-gray-700 mb-3">
               📌 需复习 ({reviewList.length} 题)
             </h3>

@@ -72,15 +72,42 @@ export async function getQuestionById(
   })
 }
 
-/** 从指定题型中随机抽取指定数量（不重复） */
+/** 批量按 ID 查询题目 */
+export async function getQuestionsByIds(
+  db: IDBDatabase,
+  ids: number[],
+): Promise<Question[]> {
+  return new Promise((resolve, reject) => {
+    if (ids.length === 0) { resolve([]); return }
+    const tx = db.transaction('questions', 'readonly')
+    const store = tx.objectStore('questions')
+    const results: Question[] = []
+    let count = 0
+    for (const id of ids) {
+      const req = store.get(id)
+      req.onsuccess = () => {
+        if (req.result) results.push(req.result as Question)
+        count++
+        if (count === ids.length) resolve(results)
+      }
+      req.onerror = () => reject(req.error)
+    }
+  })
+}
+
+/** 从指定题型中随机抽取指定数量（不重复，可排除指定 ID） */
 export async function getRandomQuestions(
   db: IDBDatabase,
   type: QuestionType,
   count: number,
+  excludeIds: number[] = [],
 ): Promise<Question[]> {
   const all = await getQuestionsByType(db, type)
+  // 过滤掉排除的 ID
+  const excludeSet = new Set(excludeIds)
+  const pool = all.filter(q => !excludeSet.has(q.id))
   // Fisher-Yates 洗牌后取前 count 条
-  const shuffled = [...all]
+  const shuffled = [...pool]
   for (let i = shuffled.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1))
     ;[shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]]
