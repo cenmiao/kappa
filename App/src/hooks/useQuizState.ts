@@ -1,5 +1,5 @@
 // 答题状态 hook
-// Slice 2+ 实现完整状态管理逻辑
+// Slice 3+ 实现完整状态管理逻辑
 
 export interface QuizState {
   questions: Array<{ id: number; type: string; stem: string; options: string[] }>

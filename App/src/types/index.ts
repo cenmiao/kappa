@@ -1,5 +1,5 @@
 // 题目类型
-export type QuestionType = 'single' | 'multi' | 'truefalse'
+export type QuestionType = 'single' | 'multi' | 'tf'
 
 // 单道题目
 export interface Question {
