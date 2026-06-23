@@ -1,10 +1,17 @@
 // 练习记录表 CRUD
-// Slice 3+ 实现具体逻辑（saveAttempt）+ Slice 5+（getAllAttempts）
+// saveAttempt — Slice 3 实现 / getAllAttempts — Slice 5 实现
 
 import type { Attempt } from '../types'
 
-export async function saveAttempt(_db: IDBDatabase, _attempt: Attempt): Promise<void> {
-  // TODO: Slice 3 实现保存练习记录
+/** 保存一次练习记录到 IndexedDB */
+export async function saveAttempt(db: IDBDatabase, attempt: Attempt): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('attempts', 'readwrite')
+    const store = tx.objectStore('attempts')
+    store.put(attempt)
+    tx.oncomplete = () => resolve()
+    tx.onerror = () => reject(tx.error)
+  })
 }
 
 export async function getAllAttempts(_db: IDBDatabase): Promise<Attempt[]> {
