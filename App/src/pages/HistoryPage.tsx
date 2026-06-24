@@ -37,7 +37,7 @@ export default function HistoryPage() {
       <div className="min-h-screen bg-gray-50 flex flex-col">
         <div className="sticky top-0 bg-white border-b border-gray-100 z-10">
           <div className="px-4 py-3 flex items-center gap-3">
-            <button onClick={() => nav('/')} className="text-gray-400 text-lg">←</button>
+            <button onClick={() => nav('/')} className="text-xs font-medium text-gray-400 hover:text-gray-500 transition-colors">← 首页</button>
             <h1 className="text-lg font-bold text-gray-900">历史记录</h1>
           </div>
         </div>
@@ -54,7 +54,7 @@ export default function HistoryPage() {
       <div className="min-h-screen bg-gray-50 flex flex-col">
         <div className="sticky top-0 bg-white border-b border-gray-100 z-10">
           <div className="px-4 py-3 flex items-center gap-3">
-            <button onClick={() => nav('/')} className="text-gray-400 text-lg">←</button>
+            <button onClick={() => nav('/')} className="text-xs font-medium text-gray-400 hover:text-gray-500 transition-colors">← 首页</button>
             <h1 className="text-lg font-bold text-gray-900">历史记录</h1>
           </div>
         </div>
@@ -82,7 +82,7 @@ export default function HistoryPage() {
       {/* 头部 */}
       <div className="sticky top-0 bg-white border-b border-gray-100 z-10">
         <div className="px-4 py-3 flex items-center gap-3">
-          <button onClick={() => nav('/')} className="text-gray-400 text-lg">←</button>
+          <button onClick={() => nav('/')} className="text-xs font-medium text-gray-400 hover:text-gray-500 transition-colors">← 首页</button>
           <h1 className="text-lg font-bold text-gray-900">历史记录</h1>
         </div>
       </div>

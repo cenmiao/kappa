@@ -15,7 +15,7 @@ export interface ConfirmModalProps {
   /** 富文本内容（显示在 message 下方），可用于红色提醒等 */
   children?: ReactNode
   /** 确认按钮样式变体 */
-  confirmVariant?: 'indigo' | 'green'
+  confirmVariant?: 'indigo' | 'green' | 'red'
 }
 
 export default function ConfirmModal({
@@ -34,7 +34,9 @@ export default function ConfirmModal({
   const confirmStyle =
     confirmVariant === 'green'
       ? 'bg-gradient-to-r from-green-500 to-emerald-500 text-white active:from-green-600 active:to-emerald-600'
-      : 'bg-indigo-500 text-white active:bg-indigo-600'
+      : confirmVariant === 'red'
+        ? 'bg-red-500 text-white active:bg-red-600'
+        : 'bg-indigo-500 text-white active:bg-indigo-600'
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">

@@ -1,10 +1,20 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { openDB } from '../db'
+import { getMeta } from '../db/progress'
+import { resetQuestionBank, loadQuestions } from '../db/loader'
+import ConfirmModal from '../components/ConfirmModal'
 
 export default function HomePage() {
   const nav = useNavigate()
   const [showPwaBanner, setShowPwaBanner] = useState(true)
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null)
+
+  // 管理员面板
+  const [showAdmin, setShowAdmin] = useState(false)
+  const [showResetConfirm, setShowResetConfirm] = useState(false)
+  const [meta, setMeta] = useState<{ questionCount: number; importTime: string } | null>(null)
+  const [resetMsg, setResetMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
   // 监听 PWA 安装事件
   useEffect(() => {
@@ -27,8 +37,47 @@ export default function HomePage() {
     }
   }
 
+  // 打开管理面板时加载 meta 信息
+  const handleOpenAdmin = async () => {
+    setShowAdmin(true)
+    setResetMsg(null)
+    try {
+      const db = await openDB()
+      const m = await getMeta(db)
+      setMeta(m)
+    } catch {
+      setMeta(null)
+    }
+  }
+
+  // 执行题库重置
+  const handleReset = async () => {
+    setShowResetConfirm(false)
+    setResetMsg(null)
+    try {
+      const db = await openDB()
+      await resetQuestionBank(db)
+      await loadQuestions()
+      // 重读 meta
+      const m = await getMeta(db)
+      setMeta(m)
+      setResetMsg({ type: 'success', text: `题库已更新，共导入 ${m?.questionCount ?? '?'} 道题` })
+    } catch (err) {
+      setResetMsg({ type: 'error', text: `重置失败：${err instanceof Error ? err.message : String(err)}` })
+    }
+  }
+
   return (
-    <div className="min-h-screen bg-gradient-to-b from-indigo-50 to-white px-5 py-10 flex flex-col">
+    <div className="min-h-screen bg-gradient-to-b from-indigo-50 to-white px-5 py-10 flex flex-col relative">
+      {/* ⚙ 管理员入口 */}
+      <button
+        onClick={handleOpenAdmin}
+        className="absolute top-3 right-4 w-8 h-8 rounded-full flex items-center justify-center text-gray-300 hover:text-gray-500 hover:bg-gray-100 transition-colors text-lg"
+        aria-label="题库管理"
+      >
+        ⚙
+      </button>
+
       {/* PWA 安装引导横幅 */}
       {showPwaBanner && (
         <div
@@ -109,6 +158,74 @@ export default function HomePage() {
 
       {/* 底部信息 */}
       <p className="text-center text-gray-300 text-xs mt-8">PWA 离线可用 · 题库 4000+ 题</p>
+
+      {/* ── 管理员面板 Modal ── */}
+      {showAdmin && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/40" onClick={() => { setShowAdmin(false); setResetMsg(null) }} />
+          <div className="relative bg-white rounded-2xl w-full max-w-sm mx-4 px-5 pt-6 pb-6 shadow-xl">
+            <h3 className="text-lg font-bold text-gray-900 mb-4">题库管理</h3>
+
+            {/* 版本信息 */}
+            <div className="space-y-2 mb-5 text-sm">
+              <div className="flex justify-between">
+                <span className="text-gray-400">题目总数</span>
+                <span className="text-gray-700 font-medium">{meta ? `${meta.questionCount} 道` : '加载中...'}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-400">导入时间</span>
+                <span className="text-gray-700 font-medium">
+                  {meta ? new Date(meta.importTime).toLocaleString('zh-CN') : '尚未导入'}
+                </span>
+              </div>
+            </div>
+
+            {/* 操作按钮 */}
+            <button
+              onClick={() => setShowResetConfirm(true)}
+              className="w-full py-3 rounded-xl border border-red-200 text-red-500 text-sm font-medium active:bg-red-50 transition-colors mb-2"
+            >
+              题库重置
+            </button>
+
+            {/* 重置结果消息 */}
+            {resetMsg && (
+              <p className={`text-xs mt-3 ${resetMsg.type === 'success' ? 'text-green-600' : 'text-red-500'}`}>
+                {resetMsg.text}
+              </p>
+            )}
+
+            {/* 关闭按钮 */}
+            <button
+              onClick={() => { setShowAdmin(false); setResetMsg(null) }}
+              className="w-full py-2 rounded-xl text-gray-400 text-xs mt-2 active:text-gray-500 transition-colors"
+            >
+              关闭
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── 题库重置确认弹窗 ── */}
+      <ConfirmModal
+        open={showResetConfirm}
+        title="题库重置"
+        message="将清空本地题库和错题池，重新从服务器下载最新题库。练习记录和顺序进度将保留。"
+        confirmLabel="确认重置"
+        cancelLabel="取消"
+        confirmVariant="red"
+        onConfirm={handleReset}
+        onCancel={() => setShowResetConfirm(false)}
+      >
+        <div className="text-xs text-gray-500 space-y-0.5 mt-1">
+          <p className="font-medium text-gray-600 mb-1">前置规则提醒：</p>
+          <p>1. 题库源文件需同时准备有答案版与无答案版两个 docx</p>
+          <p>2. 使用转换脚本合并两套文件</p>
+          <p>3. 先干跑生成格式异常报告，确认无误后再正式输出</p>
+          <p>4. 两套文件的编号和内容必须一一对应</p>
+          <p>5. 生成的新 questions.json 需部署到 GitHub Pages 后，再执行本重置</p>
+        </div>
+      </ConfirmModal>
     </div>
   )
 }
