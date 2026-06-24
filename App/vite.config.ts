@@ -19,7 +19,7 @@ export default defineConfig({
         display: 'standalone',
         orientation: 'portrait',
         icons: [
-          { src: 'favicon.svg', sizes: '48x46', type: 'image/svg+xml' },
+          { src: 'favicon.svg', sizes: '48x48', type: 'image/svg+xml' },
           { src: 'favicon.svg', sizes: '192x192', type: 'image/svg+xml', purpose: 'any' },
           { src: 'favicon.svg', sizes: '512x512', type: 'image/svg+xml', purpose: 'any maskable' },
         ],

@@ -1,3 +1,5 @@
+/// <reference types="node" />
+
 import { describe, it, expect } from 'vitest'
 import { readFileSync, existsSync } from 'node:fs'
 import { resolve, dirname } from 'node:path'
@@ -16,9 +18,8 @@ describe('PWA 配置', () => {
     const config = readViteConfig()
 
     // 验证 includeAssets 数组中包含 'questions.json'
-    // 允许单引号或双引号
-    expect(config).toMatch(/includeAssets\s*:\s*\[/)
-    expect(config).toMatch(/['"]questions\.json['"]/)
+    // 使用 [\s\S] 容忍任意空白/换行/注释，防止格式化后误报
+    expect(config).toMatch(/includeAssets[\s\S]*?questions\.json/)
   })
 })
 
@@ -64,5 +65,12 @@ describe('favicon.svg', () => {
     const svg = readFavicon()
     expect(svg).toMatch(/<svg[^>]*>/)
     expect(svg).toMatch(/viewBox/)
+  })
+
+  it('"静"字应垂直居中（dominant-baseline="central"）', () => {
+    const svg = readFavicon()
+    expect(svg).toMatch(/dominant-baseline\s*=\s*["']central["']/)
+    // y="256" 应为 viewBox 512 的中点
+    expect(svg).toMatch(/y\s*=\s*["']256["']/)
   })
 })
