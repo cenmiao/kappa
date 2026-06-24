@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useSearchParams, useNavigate, useLocation } from 'react-router-dom'
 import type { Question, Attempt } from '../types'
 import { getLoadState, getLoadError, loadQuestions, isQuestionBankReady } from '../db/loader'
@@ -27,11 +27,21 @@ export default function QuizPage() {
   const [errorMsg, setErrorMsg] = useState('')
   const [quizReady, setQuizReady] = useState(false)
   const [showConfirm, setShowConfirm] = useState(false)
+  const [showBackConfirm, setShowBackConfirm] = useState(false)
+  const thumbRefs = useRef<Map<number, HTMLButtonElement>>(new Map())
 
   const quiz = useQuizState()
 
   // ─── beforeunload：答题中离开拦截 ────────────────
   useBeforeUnload(!quiz.isSubmitted && quiz.totalQuestions > 0)
+
+  // ─── 题号自动居中滚动 ──────────────────────────
+  useEffect(() => {
+    const btn = thumbRefs.current.get(quiz.currentIndex)
+    if (btn) {
+      btn.scrollIntoView({ behavior: 'smooth', inline: 'center' })
+    }
+  }, [quiz.currentIndex])
 
   // ─── 题库加载（复用已有逻辑）──────────────────────
   const checkAndLoad = useCallback(async () => {
@@ -179,7 +189,13 @@ export default function QuizPage() {
   // ══════════════════════════════════════════════════════
   if (pageState === 'loading') {
     return (
-      <div className="min-h-screen bg-white flex flex-col items-center justify-center px-5">
+      <div className="min-h-screen bg-white flex flex-col items-center justify-center px-5 relative">
+        <button
+          onClick={() => nav('/')}
+          className="absolute top-4 left-4 text-xs font-medium text-gray-400 hover:text-gray-500 transition-colors"
+        >
+          ← 首页
+        </button>
         <div className="w-10 h-10 border-4 border-indigo-200 border-t-indigo-500 rounded-full animate-spin mb-4" />
         <p className="text-sm text-gray-400">题库加载中...</p>
       </div>
@@ -191,7 +207,13 @@ export default function QuizPage() {
   // ══════════════════════════════════════════════════════
   if (pageState === 'error') {
     return (
-      <div className="min-h-screen bg-white flex flex-col items-center justify-center px-5 text-center">
+      <div className="min-h-screen bg-white flex flex-col items-center justify-center px-5 text-center relative">
+        <button
+          onClick={() => nav('/')}
+          className="absolute top-4 left-4 text-xs font-medium text-gray-400 hover:text-gray-500 transition-colors"
+        >
+          ← 首页
+        </button>
         <div className="text-5xl mb-4">😵</div>
         <h2 className="text-lg font-bold text-gray-800 mb-2">加载失败</h2>
         <p className="text-sm text-gray-400 mb-6">{errorMsg}</p>
@@ -216,7 +238,13 @@ export default function QuizPage() {
   // ══════════════════════════════════════════════════════
   if (!quizReady) {
     return (
-      <div className="min-h-screen bg-white flex flex-col items-center justify-center px-5">
+      <div className="min-h-screen bg-white flex flex-col items-center justify-center px-5 relative">
+        <button
+          onClick={() => nav('/')}
+          className="absolute top-4 left-4 text-xs font-medium text-gray-400 hover:text-gray-500 transition-colors"
+        >
+          ← 首页
+        </button>
         <div className="w-10 h-10 border-4 border-indigo-200 border-t-indigo-500 rounded-full animate-spin mb-4" />
         <p className="text-sm text-gray-400">正在准备题目...</p>
       </div>
@@ -260,6 +288,13 @@ export default function QuizPage() {
           />
         </div>
         <div className="px-4 py-2 flex items-center justify-between">
+          {/* 左侧：返回首页 */}
+          <button
+            onClick={() => setShowBackConfirm(true)}
+            className="text-xs font-medium text-gray-400 hover:text-gray-500 transition-colors"
+          >
+            ← 首页
+          </button>
           <span className="text-xs font-medium text-gray-400">
             第 {quiz.currentIndex + 1}/{quiz.totalQuestions} 题
           </span>
@@ -270,16 +305,6 @@ export default function QuizPage() {
             >
               {typeBadge.label}
             </span>
-            {/* 不确定标记按钮 */}
-            <button
-              onClick={quiz.toggleUncertain}
-              className={`text-lg transition-colors ${
-                quiz.isCurrentUncertain ? 'text-amber-500' : 'text-gray-300 hover:text-gray-400'
-              }`}
-              aria-label={quiz.isCurrentUncertain ? '取消标记' : '标记为不确定'}
-            >
-              {quiz.isCurrentUncertain ? '⚑' : '⚐'}
-            </button>
           </div>
         </div>
       </div>
@@ -287,11 +312,27 @@ export default function QuizPage() {
       {/* ── 题目内容区 ── */}
       <div className="flex-1 flex flex-col px-5 pt-6 overflow-y-auto">
         {/* 题干 */}
-        <div className="mb-8">
+        <div className="mb-5">
           <p className="text-lg leading-relaxed text-gray-900 font-medium">{q.stem}</p>
           {q.type === 'multi' && (
             <p className="text-xs text-purple-500 mt-2">多选题 · 全对得 2 分</p>
           )}
+        </div>
+
+        {/* 不确定标记按钮 — 居中胶囊 */}
+        <div className="flex justify-center mb-5">
+          <button
+            onClick={quiz.toggleUncertain}
+            className={`inline-flex items-center gap-1.5 px-5 py-2 rounded-full border-2 text-sm font-medium transition-all active:scale-[0.98] ${
+              quiz.isCurrentUncertain
+                ? 'border-rose-300 bg-rose-50 text-rose-600'
+                : 'border-gray-200 bg-white text-gray-400 hover:border-gray-300'
+            }`}
+            aria-label={quiz.isCurrentUncertain ? '取消标记' : '标记为不确定'}
+          >
+            <span>{quiz.isCurrentUncertain ? '⚑' : '⚐'}</span>
+            <span>{quiz.isCurrentUncertain ? '已标记为不确定' : '标记为不确定'}</span>
+          </button>
         </div>
 
         {/* 大号选项按钮 */}
@@ -358,6 +399,13 @@ export default function QuizPage() {
             return (
               <button
                 key={idx}
+                ref={(el) => {
+                  if (el) {
+                    thumbRefs.current.set(idx, el)
+                  } else {
+                    thumbRefs.current.delete(idx)
+                  }
+                }}
                 onClick={() => quiz.goTo(idx)}
                 className={`flex-shrink-0 w-7 h-7 rounded-md text-[10px] font-medium flex items-center justify-center transition-all ${cellStyle}`}
               >
@@ -429,6 +477,27 @@ export default function QuizPage() {
         {unansweredCount > 0 && (
           <p className="text-sm text-red-500 font-medium">
             还有 {unansweredCount} 题未作答，未作答将计为错误
+          </p>
+        )}
+      </ConfirmModal>
+
+      {/* ── 返回首页确认弹窗 ── */}
+      <ConfirmModal
+        open={showBackConfirm}
+        title="确认返回首页"
+        message="当前答题进度不会保存，确定要返回吗？"
+        confirmLabel="确认返回"
+        cancelLabel="继续答题"
+        confirmVariant="green"
+        onConfirm={() => {
+          setShowBackConfirm(false)
+          nav('/')
+        }}
+        onCancel={() => setShowBackConfirm(false)}
+      >
+        {quiz.answeredCount > 0 && (
+          <p className="text-sm text-red-500 font-medium">
+            已答 {quiz.answeredCount}/{quiz.totalQuestions} 题，返回后进度将丢失
           </p>
         )}
       </ConfirmModal>

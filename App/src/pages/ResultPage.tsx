@@ -87,7 +87,13 @@ export default function ResultPage() {
   return (
     <div className="min-h-screen bg-gray-50 pb-20">
       {/* ── 头部 — 总分大数字 ── */}
-      <div className="bg-gradient-to-b from-indigo-600 to-indigo-500 text-white px-5 pt-8 pb-8 text-center">
+      <div className="bg-gradient-to-b from-indigo-600 to-indigo-500 text-white px-5 pt-8 pb-8 text-center relative">
+        <button
+          onClick={() => nav('/')}
+          className="absolute top-3 left-4 text-xs font-medium text-indigo-300 hover:text-white transition-colors"
+        >
+          ← 首页
+        </button>
         <p className="text-sm text-indigo-200 mb-2">成绩报告</p>
         <div className="text-6xl font-bold mb-2">{attempt.score}</div>
         <div className="text-indigo-200 text-sm mb-4">满分 {attempt.total} 分</div>

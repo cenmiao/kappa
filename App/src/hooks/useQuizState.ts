@@ -188,14 +188,16 @@ export default function useQuizState(): QuizState & QuizActions {
     if (!currentQuestion || isSubmitted) return
 
     const qid = currentQuestion.id
-    const prev = answers[qid]
-    setAnswers((a) => ({
-      ...a,
-      [qid]: {
-        userAnswer: prev?.userAnswer ?? '',
-        isUncertain: !(prev?.isUncertain ?? false),
-      },
-    }))
+    setAnswers((a) => {
+      const prev = a[qid]
+      return {
+        ...a,
+        [qid]: {
+          userAnswer: prev?.userAnswer ?? '',
+          isUncertain: !(prev?.isUncertain ?? false),
+        },
+      }
+    })
   }, [currentQuestion, isSubmitted])
 
   /** 导航 */

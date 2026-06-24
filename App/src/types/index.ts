@@ -27,6 +27,13 @@ export interface WrongAnswer {
   wrongCount: number
 }
 
+// 题库元信息（存在 progress 表中）
+export interface Meta {
+  key: 'meta'
+  importTime: string
+  questionCount: number
+}
+
 // 一次完整的练习记录
 export interface Attempt {
   id: string
