@@ -29,7 +29,7 @@ export async function loadQuestions(): Promise<void> {
   const promise = (async () => {
     try {
       const db = await openDB()
-      const response = await fetch('/questions.json')
+      const response = await fetch(`${import.meta.env.BASE_URL}questions.json`)
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`)
       }
