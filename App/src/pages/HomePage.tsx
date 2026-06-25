@@ -174,16 +174,30 @@ export default function HomePage() {
               </div>
               {/* 分类统计 */}
               {meta?.categories && (
-                <div className="border-t border-gray-100 pt-2 mt-2 space-y-1">
-                  {['综合管理', '税务公共知识', '政治理论', '强基培训'].map(cat => (
-                    meta.categories![cat] != null && (
-                      <div key={cat} className="flex justify-between">
-                        <span className="text-gray-400">{cat}</span>
-                        <span className="text-gray-600">{meta.categories![cat]} 道</span>
-                      </div>
-                    )
-                  ))}
-                </div>
+                (() => {
+                  // 固定顺序排列，未知分类追加到末尾
+                  const ORDER = ['综合管理', '税务公共知识', '政治理论', '强基培训']
+                  const cats = Object.keys(meta.categories).sort(
+                    (a, b) => {
+                      const ai = ORDER.indexOf(a)
+                      const bi = ORDER.indexOf(b)
+                      if (ai === -1 && bi === -1) return a.localeCompare(b, 'zh-CN')
+                      if (ai === -1) return 1
+                      if (bi === -1) return -1
+                      return ai - bi
+                    }
+                  )
+                  return (
+                    <div className="border-t border-gray-100 pt-2 mt-2 space-y-1">
+                      {cats.map(cat => (
+                        <div key={cat} className="flex justify-between">
+                          <span className="text-gray-400">{cat}</span>
+                          <span className="text-gray-600">{meta.categories![cat]} 道</span>
+                        </div>
+                      ))}
+                    </div>
+                  )
+                })()
               )}
               <div className="flex justify-between">
                 <span className="text-gray-400">导入时间</span>

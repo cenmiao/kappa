@@ -141,7 +141,7 @@ function main() {
     process.exit(1)
   }
 
-  // 按文件名首字符排序
+  // 按文件名排序：格式为 "{序号} -【分类】..."，localeCompare 保证 1→2→3→4 顺序
   allFiles.sort((a, b) => a.localeCompare(b, 'zh-CN'))
   console.log(`  找到 ${allFiles.length} 个文件:`)
   allFiles.forEach(f => console.log(`    - ${f}`))
