@@ -214,9 +214,9 @@ describe('HistoryPage — 展开详情', () => {
   })
 })
 
-// ─── Slice 2: category 参数 ────────────────────────────
+// ─── Slice 5: category 筛选 ────────────────────────────
 
-describe('HistoryPage — category 参数', () => {
+describe('HistoryPage — category 筛选', () => {
   it('带 category 参数时页面正常渲染不崩溃', async () => {
     const { getAllAttempts } = await import('../db/attempts')
     vi.mocked(getAllAttempts).mockResolvedValue([
@@ -232,5 +232,102 @@ describe('HistoryPage — category 参数', () => {
     // 正常显示记录行
     await screen.findByTestId('attempt-row-cat-test')
     expect(screen.getByTestId('stat-练习次数')).toBeInTheDocument()
+  })
+
+  it('单套筛选：只展示匹配 category 的记录', async () => {
+    const { getAllAttempts } = await import('../db/attempts')
+    vi.mocked(getAllAttempts).mockResolvedValue([
+      makeAttempt({ id: 'a1', category: '综合管理', score: 80, accuracy: 0.8 }),
+      makeAttempt({ id: 'a2', category: '政治理论', score: 90, accuracy: 0.9 }),
+      makeAttempt({ id: 'a3', category: '综合管理', score: 70, accuracy: 0.7 }),
+    ])
+
+    render(
+      <MemoryRouter initialEntries={['/history?category=综合管理']}>
+        <HistoryPage />
+      </MemoryRouter>,
+    )
+
+    // 只显示综合管理的记录
+    await screen.findByTestId('attempt-row-a1')
+    expect(screen.getByTestId('attempt-row-a3')).toBeInTheDocument()
+    // 政治理论的记录不应出现
+    expect(screen.queryByTestId('attempt-row-a2')).not.toBeInTheDocument()
+    // 练习次数应为 2（非 3）
+    expect(screen.getByTestId('stat-value-练习次数').textContent).toBe('2')
+  })
+
+  it('统计数据基于筛选后的记录计算', async () => {
+    const { getAllAttempts } = await import('../db/attempts')
+    vi.mocked(getAllAttempts).mockResolvedValue([
+      makeAttempt({ id: 's1', category: '综合管理', score: 60, accuracy: 0.6 }),
+      makeAttempt({ id: 's2', category: '政治理论', score: 100, accuracy: 1.0 }),
+      makeAttempt({ id: 's3', category: '综合管理', score: 80, accuracy: 0.8 }),
+    ])
+
+    render(
+      <MemoryRouter initialEntries={['/history?category=综合管理']}>
+        <HistoryPage />
+      </MemoryRouter>,
+    )
+
+    await screen.findByTestId('stat-练习次数')
+    // 综合管理 2 条：60 和 80 → 平均 70，最高 80
+    expect(screen.getByTestId('stat-value-练习次数').textContent).toBe('2')
+    expect(screen.getByTestId('stat-value-平均分').textContent).toBe('70')
+    expect(screen.getByTestId('stat-value-最高分').textContent).toBe('80')
+    // 最高分不是 100（政治理论的记录应被过滤）
+    expect(screen.getByTestId('stat-value-最高分').textContent).not.toBe('100')
+  })
+
+  it('单套无记录时显示带分类名的空状态文案', async () => {
+    const { getAllAttempts } = await import('../db/attempts')
+    vi.mocked(getAllAttempts).mockResolvedValue([])
+
+    render(
+      <MemoryRouter initialEntries={['/history?category=政治理论']}>
+        <HistoryPage />
+      </MemoryRouter>,
+    )
+
+    // 应显示带分类名的空状态
+    expect(await screen.findByText('政治理论暂无练习记录')).toBeInTheDocument()
+    // 不应显示通用无记录文案
+    expect(screen.queryByText('还没有练习记录')).not.toBeInTheDocument()
+  })
+
+  it('"全部"模式无记录时保持通用空状态文案', async () => {
+    const { getAllAttempts } = await import('../db/attempts')
+    vi.mocked(getAllAttempts).mockResolvedValue([])
+
+    render(
+      <MemoryRouter initialEntries={['/history?category=全部']}>
+        <HistoryPage />
+      </MemoryRouter>,
+    )
+
+    expect(await screen.findByText('还没有练习记录')).toBeInTheDocument()
+  })
+
+  it('"全部"模式：展示所有题库分类的记录', async () => {
+    const { getAllAttempts } = await import('../db/attempts')
+    vi.mocked(getAllAttempts).mockResolvedValue([
+      makeAttempt({ id: 'b1', category: '综合管理', score: 80, accuracy: 0.8 }),
+      makeAttempt({ id: 'b2', category: '政治理论', score: 90, accuracy: 0.9 }),
+      makeAttempt({ id: 'b3', category: '税务公共知识', score: 70, accuracy: 0.7 }),
+    ])
+
+    render(
+      <MemoryRouter initialEntries={['/history?category=全部']}>
+        <HistoryPage />
+      </MemoryRouter>,
+    )
+
+    await screen.findByTestId('attempt-row-b1')
+    // 三条不同分类的记录都应出现
+    expect(screen.getByTestId('attempt-row-b2')).toBeInTheDocument()
+    expect(screen.getByTestId('attempt-row-b3')).toBeInTheDocument()
+    // 练习次数为 3
+    expect(screen.getByTestId('stat-value-练习次数').textContent).toBe('3')
   })
 })

@@ -12,11 +12,9 @@ type PageState = 'loading' | 'ready'
 export default function HistoryPage() {
   const nav = useNavigate()
   const [searchParams] = useSearchParams()
-  // Slice 5 将使用 category 参数过滤历史记录
-  const _category = searchParams.get('category') ?? undefined
-  void _category
+  const category = searchParams.get('category') ?? '全部'
   const [pageState, setPageState] = useState<PageState>('loading')
-  const [attempts, setAttempts] = useState<Attempt[]>([])
+  const [filteredAttempts, setFilteredAttempts] = useState<Attempt[]>([])
   const [expandedId, setExpandedId] = useState<string | null>(null)
 
   useEffect(() => {
@@ -25,7 +23,10 @@ export default function HistoryPage() {
       .then((db) => getAllAttempts(db))
       .then((list) => {
         if (!cancelled) {
-          setAttempts(list)
+          const attempts = category === '全部'
+            ? list
+            : list.filter(a => a.category === category)
+          setFilteredAttempts(attempts)
           setPageState('ready')
         }
       })
@@ -33,7 +34,7 @@ export default function HistoryPage() {
         if (!cancelled) setPageState('ready')
       })
     return () => { cancelled = true }
-  }, [])
+  }, [category])
 
   // ─── 加载态 ───
   if (pageState === 'loading') {
@@ -53,7 +54,8 @@ export default function HistoryPage() {
   }
 
   // ─── 空状态 ───
-  if (attempts.length === 0) {
+  if (filteredAttempts.length === 0) {
+    const emptyKind: 'generic' | 'category' = category === '全部' ? 'generic' : 'category'
     return (
       <div className="min-h-screen bg-gray-50 flex flex-col">
         <div className="sticky top-0 bg-white border-b border-gray-100 z-10">
@@ -64,13 +66,19 @@ export default function HistoryPage() {
         </div>
         <div className="flex-1 flex flex-col items-center justify-center px-5 py-16 text-center">
           <div className="text-6xl mb-6">📝</div>
-          <h2 className="text-lg font-bold text-gray-800 mb-2">还没有练习记录</h2>
-          <p className="text-sm text-gray-400 mb-8">开始第一次练习，记录你的学习轨迹</p>
+          <h2 className="text-lg font-bold text-gray-800 mb-2">
+            {emptyKind === 'generic' ? '还没有练习记录' : `${category}暂无练习记录`}
+          </h2>
+          <p className="text-sm text-gray-400 mb-8">
+            {emptyKind === 'generic'
+              ? '开始第一次练习，记录你的学习轨迹'
+              : '返回首页选择其他题库或开始练习'}
+          </p>
           <button
-            onClick={() => nav('/quiz')}
+            onClick={() => nav('/')}
             className="px-8 py-3 rounded-xl bg-indigo-500 text-white text-sm font-medium active:bg-indigo-600 transition-colors"
           >
-            开始随机练习
+            {emptyKind === 'generic' ? '开始随机练习' : '返回首页'}
           </button>
         </div>
       </div>
@@ -78,8 +86,8 @@ export default function HistoryPage() {
   }
 
   // ─── 有数据 ───
-  const stats = computeStats(attempts)
-  const chartData = attempts.map((a) => ({ date: a.date, score: a.score })).reverse()
+  const stats = computeStats(filteredAttempts)
+  const chartData = filteredAttempts.map((a) => ({ date: a.date, score: a.score })).reverse()
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col pb-20">
@@ -109,12 +117,12 @@ export default function HistoryPage() {
 
         {/* ── 练习记录列表 ── */}
         <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
-          {attempts.map((a, i) => {
+          {filteredAttempts.map((a, i) => {
             const isExpanded = expandedId === a.id
             return (
               <div
                 key={a.id}
-                className={i < attempts.length - 1 ? 'border-b border-gray-50' : ''}
+                className={i < filteredAttempts.length - 1 ? 'border-b border-gray-50' : ''}
               >
                 <button
                   onClick={() => setExpandedId(isExpanded ? null : a.id)}
