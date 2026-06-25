@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import { openDB } from '../db'
 import { getMeta } from '../db/progress'
 import { resetQuestionBank, loadQuestions } from '../db/loader'
+import { getAllWrongAnswers } from '../db/wrongAnswers'
 import ConfirmModal from '../components/ConfirmModal'
 
 const CATEGORIES = ['全部', '综合管理', '税务公共知识', '政治理论', '强基培训'] as const
@@ -26,6 +27,29 @@ export default function HomePage() {
   const sequentialDesc = category === '全部'
     ? '按题库编号顺序答题，支持续上次进度'
     : `${category} 按编号顺序答题，支持续上次进度`
+
+  // 错题本数量
+  const [wrongCount, setWrongCount] = useState(0)
+
+  const wrongbookDesc = wrongCount > 0
+    ? (category === '全部' ? `共 ${wrongCount} 题待复习` : `${category} · 共 ${wrongCount} 题待复习`)
+    : '暂无错题'
+
+  // 每次 category 变化时查询错题数
+  useEffect(() => {
+    let cancelled = false
+    openDB()
+      .then((db) => getAllWrongAnswers(db))
+      .then((items) => {
+        if (cancelled) return
+        const filtered = category === '全部'
+          ? items
+          : items.filter(w => w.category === category)
+        setWrongCount(filtered.length)
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [category])
 
   // Toast 缺参提示
   const [toast, setToast] = useState<string | null>(null)
@@ -209,6 +233,23 @@ export default function HomePage() {
             <div className="flex-1">
               <h2 className="text-lg font-bold text-gray-900 mb-1">历史记录</h2>
               <p className="text-gray-500 text-sm">查看练习趋势和成绩变化分析</p>
+            </div>
+            <div className="text-gray-300 text-xl">→</div>
+          </div>
+        </button>
+
+        {/* 错题本 */}
+        <button
+          onClick={() => nav(`/quiz?mode=wrongbook&category=${category}`)}
+          className={`relative overflow-hidden rounded-2xl bg-white border border-gray-200 p-6 text-left shadow-sm active:scale-[0.98] transition-transform ${
+            wrongCount === 0 ? 'opacity-60' : ''
+          }`}
+        >
+          <div className="flex items-start gap-4">
+            <div className="text-3xl">📕</div>
+            <div className="flex-1">
+              <h2 className="text-lg font-bold text-gray-900 mb-1">错题本</h2>
+              <p className="text-gray-500 text-sm">{wrongbookDesc}</p>
             </div>
             <div className="text-gray-300 text-xl">→</div>
           </div>

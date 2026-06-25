@@ -29,6 +29,10 @@ vi.mock('../db/progress', () => ({
   getMeta: (...args: unknown[]) => mockGetMeta(...args),
 }))
 
+vi.mock('../db/wrongAnswers', () => ({
+  getAllWrongAnswers: vi.fn(() => Promise.resolve([])),
+}))
+
 vi.mock('../db/loader', () => ({
   resetQuestionBank: vi.fn(),
   loadQuestions: vi.fn(),
