@@ -17,6 +17,7 @@ function createMockQuestion(overrides: Partial<Question> = {}): Question {
   return {
     id: 1,
     type: 'single',
+    category: '综合管理',
     stem: '这是一道测试题目？',
     options: ['A. 选项A', 'B. 选项B', 'C. 选项C', 'D. 选项D'],
     answer: 'A',

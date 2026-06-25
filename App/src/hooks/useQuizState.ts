@@ -306,6 +306,7 @@ export default function useQuizState(): QuizState & QuizActions {
       id: crypto.randomUUID(),
       date: new Date().toISOString(),
       mode: 'random', // 默认 random，由调用方覆盖
+      category: '全部',
       score,
       total: 100,
       accuracy: score / 100,

@@ -1,14 +1,13 @@
 /**
- * 题库转换脚本
- * 将 tiku/ 下两个 docx 源文件合并转换为 public/questions.json
+ * 题库转换脚本（v2）
+ * 扫描 tiku/ 目录下所有 .docx，按文件名首字符排序后合并为 questions.json
  *
  * 用法:
- *   node scripts/convert.js          # 正式输出（需在 App/ 目录下运行）
- *   node scripts/convert.js --dry    # 干跑：仅生成异常报告，不输出 JSON
+ *   node scripts/convert.js          # 需在 App/ 目录下运行
  */
 
 import { execSync } from 'node:child_process'
-import { readFileSync, writeFileSync, mkdirSync, unlinkSync } from 'node:fs'
+import { readFileSync, writeFileSync, mkdirSync, unlinkSync, readdirSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { tmpdir } from 'node:os'
@@ -19,6 +18,9 @@ const ROOT = join(__dirname, '..')
 const TIKU_DIR = join(ROOT, 'tiku')
 const PUBLIC_DIR = join(ROOT, 'public')
 const LOGS_DIR = join(ROOT, 'logs')
+const OUTPUT_JSON = join(PUBLIC_DIR, 'questions.json')
+const LOG_FILE = join(LOGS_DIR, 'convert-log.txt')
+
 /** 自动查找 pandoc 路径 */
 function findPandoc() {
   // 优先尝试 PATH 中的 pandoc
@@ -40,12 +42,8 @@ function findPandoc() {
   }
   throw new Error('找不到 pandoc，请安装或加入 PATH')
 }
-const PANDOC = findPandoc()
 
-const WITH_ANSWER = join(TIKU_DIR, 'tiku-with-answer.docx')
-const WITHOUT_ANSWER = join(TIKU_DIR, 'tiku-without-answer.docx')
-const OUTPUT_JSON = join(PUBLIC_DIR, 'questions.json')
-const LOG_FILE = join(LOGS_DIR, 'convert-log.txt')
+const PANDOC = findPandoc()
 
 const TYPE_MAP = {
   '单选题': 'single',
@@ -75,11 +73,11 @@ function docxToText(docxPath) {
 /** 按 "数字. 【" 模式切分题目 */
 function splitQuestions(rawText) {
   const parts = rawText.split(/\n(?=\d+\.\s+【)/)
-  // 跳过第一段（标题 "全量题目总汇总"）
+  // 跳过第一段（标题行）
   return parts.slice(1).map(p => p.trim()).filter(Boolean)
 }
 
-/** 解析单道题（有答案版） */
+/** 解析单道题 */
 function parseQuestionWithAnswer(block) {
   const lines = block.split('\n')
   const headerLine = lines[0].trim()
@@ -88,18 +86,18 @@ function parseQuestionWithAnswer(block) {
   const headerMatch = headerLine.match(/^(\d+)\.\s+【(.+?)】/)
   if (!headerMatch) return { error: 'HEADER_PARSE_FAILED', block: block.substring(0, 80) }
 
-  const id = parseInt(headerMatch[1], 10)
+  const localId = parseInt(headerMatch[1], 10)
   const typeLabel = headerMatch[2]
   const type = TYPE_MAP[typeLabel]
-  if (!type) return { error: 'UNKNOWN_TYPE', id, typeLabel, block: block.substring(0, 80) }
+  if (!type) return { error: 'UNKNOWN_TYPE', id: localId, typeLabel, block: block.substring(0, 80) }
 
   // 题干：】之后到第一个 "- A." 之前（含跨行）
   const stemStart = block.indexOf('】') + 1
   const firstOption = block.search(/\n-\s+[A-E]\./)
-  if (firstOption === -1) return { error: 'NO_OPTIONS_FOUND', id, block: block.substring(0, 120) }
+  if (firstOption === -1) return { error: 'NO_OPTIONS_FOUND', id: localId, block: block.substring(0, 120) }
   const stem = block.substring(stemStart, firstOption).replace(/\n/g, '').trim()
 
-  // 选项（每行 "- A. xxx"，贪婪匹配到行尾。换行符已统一为 \n）
+  // 选项（每行 "- A. xxx"）
   const optionRegex = /-\s+([A-E])\.\s+(.+)/g
   const optionMap = {}
   let optMatch
@@ -109,72 +107,15 @@ function parseQuestionWithAnswer(block) {
   const optionKeys = Object.keys(optionMap).sort()
   const options = optionKeys.map(k => optionMap[k])
 
-  // 答案（贪婪匹配到行尾，. 不跨越 \n）
+  // 答案
   const answerMatch = block.match(/答案：(.+)/)
   const answer = answerMatch ? answerMatch[1].trim() : undefined
 
-  // 解析（从"解析："到块末尾或下一个题目头）
+  // 解析
   const expMatch = block.match(/解析：([\s\S]+?)(?=\n\d+\.\s+【|$)/)
   const explanation = expMatch ? expMatch[1].replace(/\n/g, ' ').trim() : undefined
 
-  return { id, type, stem, options, answer, explanation }
-}
-
-/** 解析单道题（无答案版，仅提取编号+题型+题干+选项用于交叉验证） */
-function parseQuestionWithoutAnswer(block) {
-  const headerMatch = block.trim().match(/^(\d+)\.\s+【(.+?)】/)
-  if (!headerMatch) return { error: 'HEADER_PARSE_FAILED', block: block.substring(0, 80) }
-
-  const id = parseInt(headerMatch[1], 10)
-  const typeLabel = headerMatch[2]
-  const type = TYPE_MAP[typeLabel]
-  if (!type) return { error: 'UNKNOWN_TYPE', id, typeLabel }
-
-  const stemStart = block.indexOf('】') + 1
-  const firstOption = block.search(/\n-\s+[A-E]\./)
-  if (firstOption === -1) return { error: 'NO_OPTIONS_FOUND', id }
-  const stem = block.substring(stemStart, firstOption).replace(/\n/g, '').trim()
-
-  return { id, type, stem }
-}
-
-/** 交叉验证 */
-function crossValidate(withAnswerQuestions, withoutAnswerQuestions) {
-  const logs = []
-  const withMap = new Map(withAnswerQuestions.map(q => [q.id, q]))
-  const withoutMap = new Map(withoutAnswerQuestions.map(q => [q.id, q]))
-
-  // 检查编号差异
-  const withIds = new Set(withMap.keys())
-  const withoutIds = new Set(withoutMap.keys())
-  const onlyInWith = [...withIds].filter(id => !withoutIds.has(id))
-  const onlyInWithout = [...withoutIds].filter(id => !withIds.has(id))
-
-  if (onlyInWith.length > 0) {
-    logs.push(`[交叉验证] 仅在 with-answer 中存在的编号 (${onlyInWith.length}): ${onlyInWith.slice(0, 20).join(', ')}${onlyInWith.length > 20 ? '...' : ''}`)
-  }
-  if (onlyInWithout.length > 0) {
-    logs.push(`[交叉验证] 仅在 without-answer 中存在的编号 (${onlyInWithout.length}): ${onlyInWithout.slice(0, 20).join(', ')}${onlyInWithout.length > 20 ? '...' : ''}`)
-  }
-
-  // 逐题比对题干
-  let mismatchCount = 0
-  for (const id of withIds) {
-    const w = withMap.get(id)
-    const wo = withoutMap.get(id)
-    if (!wo) continue
-    if (w.stem !== wo.stem) {
-      mismatchCount++
-      if (mismatchCount <= 20) {
-        logs.push(`[交叉验证] #${id} 题干不一致: with-answer="${w.stem.substring(0, 60)}..." without-answer="${wo.stem.substring(0, 60)}..."`)
-      }
-    }
-  }
-  if (mismatchCount > 0) {
-    logs.push(`[交叉验证] 题干不一致总数: ${mismatchCount}`)
-  }
-
-  return { logs, mismatchIds: 0 /* 不一致时跳过，不阻断 */ }
+  return { localId, type, stem, options, answer, explanation }
 }
 
 /** 写入日志 */
@@ -189,117 +130,116 @@ function writeLog(lines) {
 // ─── 主流程 ───────────────────────────────────────────────────
 
 function main() {
-  const isDry = process.argv.includes('--dry')
-  console.log(isDry ? '🔍 干跑模式 — 仅生成异常报告' : '🔨 正式模式 — 输出 questions.json')
+  console.log('🔨 多文件合并模式 — 扫描 tiku/ 目录...')
 
   const allLogs = []
 
-  // 1. pandoc 转换两个 docx
-  console.log('\n📄 转换 docx → 纯文本...')
-  let withText, withoutText
-  try {
-    withText = docxToText(WITH_ANSWER)
-    console.log(`  有答案版: ${withText.split('\n').length} 行`)
-  } catch (e) {
-    console.error('❌ 转换有答案版失败:', e.message)
-    allLogs.push(`[错误] pandoc 转换 ${WITH_ANSWER} 失败: ${e.message}`)
-    writeLog(allLogs)
-    process.exit(1)
-  }
-  try {
-    withoutText = docxToText(WITHOUT_ANSWER)
-    console.log(`  无答案版: ${withoutText.split('\n').length} 行`)
-  } catch (e) {
-    console.error('❌ 转换无答案版失败:', e.message)
-    allLogs.push(`[错误] pandoc 转换 ${WITHOUT_ANSWER} 失败: ${e.message}`)
-    writeLog(allLogs)
+  // 1. 扫描 tiku 目录，找出所有 .docx 文件
+  const allFiles = readdirSync(TIKU_DIR).filter(f => f.endsWith('.docx'))
+  if (allFiles.length === 0) {
+    console.error('❌ tiku/ 目录中没有 .docx 文件')
     process.exit(1)
   }
 
-  console.log('\n📋 解析题目...')
-  const withBlocks = splitQuestions(withText)
-  const withoutBlocks = splitQuestions(withoutText)
-  console.log(`  有答案版: ${withBlocks.length} 题`)
-  console.log(`  无答案版: ${withoutBlocks.length} 题`)
+  // 按文件名首字符排序
+  allFiles.sort((a, b) => a.localeCompare(b, 'zh-CN'))
+  console.log(`  找到 ${allFiles.length} 个文件:`)
+  allFiles.forEach(f => console.log(`    - ${f}`))
 
-  // 3. 解析有答案版
-  const withAnswerQuestions = []
-  for (const block of withBlocks) {
-    const result = parseQuestionWithAnswer(block)
-    if (result.error) {
-      allLogs.push(`[解析异常] ${result.error} | id=${result.id ?? '?'} | ${result.block}`)
-    } else {
-      withAnswerQuestions.push(result)
+  // 2. 逐个转换、解析，收集所有题目
+  let globalId = 0
+  const allQuestions = []
+  const fileStats = [] // 每个文件的统计
+
+  for (const filename of allFiles) {
+    const filePath = join(TIKU_DIR, filename)
+    console.log(`\n📄 处理: ${filename}`)
+
+    // 从文件名提取 category（第一个【xxx】中的内容）
+    const catMatch = filename.match(/【(.+?)】/)
+    const category = catMatch ? catMatch[1] : '未知分类'
+
+    // pandoc 转换
+    let text
+    try {
+      text = docxToText(filePath)
+      console.log(`  pandoc 转换: ${text.split('\n').length} 行`)
+    } catch (e) {
+      console.error(`  ❌ 转换失败:`, e.message)
+      allLogs.push(`[错误] pandoc 转换 ${filePath} 失败: ${e.message}`)
+      continue
     }
-  }
 
-  // 4. 解析无答案版（用于交叉验证）
-  const withoutAnswerQuestions = []
-  for (const block of withoutBlocks) {
-    const result = parseQuestionWithoutAnswer(block)
-    if (result.error) {
-      allLogs.push(`[解析异常(无答案版)] ${result.error} | id=${result.id ?? '?'}`)
-    } else {
-      withoutAnswerQuestions.push(result)
+    // 切分 + 解析
+    const blocks = splitQuestions(text)
+    console.log(`  切分出 ${blocks.length} 题`)
+
+    const fileQuestions = []
+    let fileErrors = 0
+    for (const block of blocks) {
+      const result = parseQuestionWithAnswer(block)
+      if (result.error) {
+        fileErrors++
+        allLogs.push(`[解析异常] ${result.error} | 文件=${filename} | localId=${result.id ?? '?'} | ${result.block}`)
+      } else {
+        fileQuestions.push(result)
+      }
     }
+
+    // 重新分配全局 ID，附加 category
+    fileQuestions.forEach(q => {
+      globalId++
+      allQuestions.push({
+        id: globalId,
+        type: q.type,
+        category,
+        stem: q.stem,
+        options: q.options,
+        answer: q.answer,
+        explanation: q.explanation,
+      })
+    })
+
+    fileStats.push({ filename, category, count: fileQuestions.length, errors: fileErrors })
+    console.log(`  解析: ${fileQuestions.length} 题成功${fileErrors > 0 ? `, ${fileErrors} 题失败` : ''}`)
   }
 
-  // 5. 交叉验证
-  console.log('\n🔬 交叉验证...')
-  const { logs: crossLogs } = crossValidate(withAnswerQuestions, withoutAnswerQuestions)
-  allLogs.push(...crossLogs)
-  if (crossLogs.length === 0) {
-    console.log('  ✅ 全部通过')
-    allLogs.push('[交叉验证] ✅ 全部通过 — 两个文件编号和题干一致')
-  }
-
-  // 6. 格式异常汇总
+  // 3. 统计输出
   const typeLabelCount = {}
-  withAnswerQuestions.forEach(q => {
+  allQuestions.forEach(q => {
     const label = Object.keys(TYPE_MAP).find(k => TYPE_MAP[k] === q.type)
     typeLabelCount[label] = (typeLabelCount[label] || 0) + 1
   })
-  const answerFormats = { single: 0, multi: 0 }
-  withAnswerQuestions.forEach(q => {
-    if (q.answer) {
-      answerFormats[q.answer.includes(',') ? 'multi' : 'single']++
-    }
+
+  const categoryCount = {}
+  allQuestions.forEach(q => {
+    categoryCount[q.category] = (categoryCount[q.category] || 0) + 1
   })
 
   const summary = [
-    `\n📊 统计:`,
-    `  总题数: ${withAnswerQuestions.length}`,
-    `  单选题(single): ${typeLabelCount['单选题'] || 0}`,
-    `  多选题(multi): ${typeLabelCount['多选题'] || 0}`,
-    `  判断题(tf): ${typeLabelCount['判断题'] || 0}`,
-    `  单选答案: ${answerFormats.single}`,
-    `  多选答案: ${answerFormats.multi}`,
-    `  解析失败: ${withBlocks.length - withAnswerQuestions.length}`,
+    `\n📊 合并统计:`,
+    `  总题数: ${allQuestions.length}`,
+    `  全局 ID 范围: 1 - ${globalId}`,
+    ``,
+    `  各分类:`,
+    ...Object.entries(categoryCount).map(([cat, n]) => `    ${cat}: ${n} 题`),
+    ``,
+    `  各题型:`,
+    `    单选题(single): ${typeLabelCount['单选题'] || 0}`,
+    `    多选题(multi): ${typeLabelCount['多选题'] || 0}`,
+    `    判断题(tf): ${typeLabelCount['判断题'] || 0}`,
   ]
   console.log(summary.join('\n'))
   allLogs.push(...summary)
 
-  // 7. 输出
-  if (isDry) {
-    console.log('\n🔍 干跑完成，未写入 JSON 文件。')
-    allLogs.push('\n🔍 干跑完成。')
-  } else {
-    mkdirSync(PUBLIC_DIR, { recursive: true })
-    // 只输出有答案版（合并了答案和解析）
-    const output = withAnswerQuestions.map(q => ({
-      id: q.id,
-      type: q.type,
-      stem: q.stem,
-      options: q.options,
-      answer: q.answer,
-      explanation: q.explanation,
-    }))
-    writeFileSync(OUTPUT_JSON, JSON.stringify(output, null, 2), 'utf-8')
-    const sizeKB = (Buffer.byteLength(JSON.stringify(output)) / 1024).toFixed(1)
-    console.log(`\n✅ 已输出 ${OUTPUT_JSON} (${output.length} 题, ${sizeKB} KB)`)
-    allLogs.push(`\n✅ 正式输出: ${output.length} 题 → ${OUTPUT_JSON}`)
-  }
+  // 4. 输出 JSON
+  mkdirSync(PUBLIC_DIR, { recursive: true })
+  writeFileSync(OUTPUT_JSON, JSON.stringify(allQuestions, null, 2), 'utf-8')
+  const sizeKB = (Buffer.byteLength(JSON.stringify(allQuestions)) / 1024).toFixed(1)
+  console.log(`\n✅ 已输出 ${OUTPUT_JSON} (${allQuestions.length} 题, ${sizeKB} KB)`)
+  allLogs.push(`\n✅ 正式输出: ${allQuestions.length} 题 → ${OUTPUT_JSON}`)
 
+  // 5. 写入日志
   writeLog(allLogs)
 }
 
