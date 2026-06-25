@@ -3,7 +3,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, cleanup, fireEvent, waitFor, act } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import QuizPage from './QuizPage'
-import type { Question } from '../types'
+import type { Question, Attempt } from '../types'
+import { saveProgress as mockSaveProgress } from '../db/progress'
 
 // 可观察的 mock
 const mockToggleUncertain = vi.fn()
@@ -381,5 +382,142 @@ describe('QuizPage — 题量不足提示条', () => {
 
     await screen.findByText('题库加载中...')
     expect(screen.queryByText(/当前题库题量不足/)).not.toBeInTheDocument()
+  })
+})
+
+// ─── Slice 4: 顺序模式交卷保存带 category 后缀的进度键 ─────
+
+describe('QuizPage — 顺序模式进度保存 key', () => {
+  function makeAttempt(overrides: Partial<Attempt> = {}): Attempt {
+    return {
+      id: 'test-attempt-id',
+      date: new Date().toISOString(),
+      mode: 'sequential',
+      category: '综合管理',
+      score: 80,
+      total: 100,
+      accuracy: 0.8,
+      singleAccuracy: 0.9,
+      multiAccuracy: 0.7,
+      tfAccuracy: 0.8,
+      answers: [
+        { questionId: 1, userAnswer: 'A', isCorrect: true, isUncertain: false },
+      ],
+      ...overrides,
+    }
+  }
+
+  it('顺序模式下交卷保存使用 "sequential:分类名" 键', async () => {
+    // 需要足够多的题目使 currentIndex=9 不越界
+    const qs = Array.from({ length: 10 }, (_, i) =>
+      createMockQuestion({ id: i + 1, stem: `题目${i + 1}` })
+    )
+    currentMockState = mockQuizState({
+      mode: 'sequential',
+      questions: qs,
+      currentIndex: 9,
+      startIndex: 0,
+      totalQuestions: 10,
+      answeredCount: 10,
+      submit: vi.fn(() => makeAttempt()),
+      hasCurrentAnswer: true,
+    })
+    currentSearchParams = new URLSearchParams('mode=sequential&category=综合管理')
+
+    renderPage()
+
+    // 等待最后一题渲染
+    await screen.findByText('题目10')
+
+    // 点击交卷按钮（第 10 题是最后一题，按钮文字为 "✓ 交卷"）
+    const submitBtn = screen.getByText(/交卷/)
+    await act(async () => {
+      fireEvent.click(submitBtn)
+      await new Promise((r) => setTimeout(r, 0))
+    })
+
+    // 确认交卷
+    const confirmBtn = await screen.findByRole('button', { name: '确认交卷' })
+    await act(async () => {
+      fireEvent.click(confirmBtn)
+      await new Promise((r) => setTimeout(r, 0))
+    })
+
+    // 验证 saveProgress 被以正确参数调用
+    expect(mockSaveProgress).toHaveBeenCalledWith(
+      expect.any(Object),       // db
+      10,                        // startIndex(0) + currentIndex(9) + 1 = 10
+      'sequential:综合管理',     // category key
+    )
+  })
+
+  it('顺序模式"全部"分类使用 "sequential:全部" 键', async () => {
+    const qs = Array.from({ length: 5 }, (_, i) =>
+      createMockQuestion({ id: i + 1, category: '综合管理', stem: `题目${i + 1}` })
+    )
+    currentMockState = mockQuizState({
+      mode: 'sequential',
+      questions: qs,
+      currentIndex: 4,
+      startIndex: 0,
+      totalQuestions: 5,
+      answeredCount: 5,
+      submit: vi.fn(() => makeAttempt({ category: '全部' })),
+      hasCurrentAnswer: true,
+    })
+    currentSearchParams = new URLSearchParams('mode=sequential&category=全部')
+
+    renderPage()
+
+    await screen.findByText('题目5')
+
+    const submitBtn = screen.getByText(/交卷/)
+    await act(async () => {
+      fireEvent.click(submitBtn)
+      await new Promise((r) => setTimeout(r, 0))
+    })
+
+    const confirmBtn = await screen.findByRole('button', { name: '确认交卷' })
+    await act(async () => {
+      fireEvent.click(confirmBtn)
+      await new Promise((r) => setTimeout(r, 0))
+    })
+
+    expect(mockSaveProgress).toHaveBeenCalledWith(
+      expect.any(Object),
+      5,
+      'sequential:全部',
+    )
+  })
+
+  it('随机模式下交卷不调用 saveProgress', async () => {
+    currentMockState = mockQuizState({
+      mode: 'random',
+      questions: [createMockQuestion()],
+      currentIndex: 0,
+      totalQuestions: 1,
+      answeredCount: 1,
+      submit: vi.fn(() => makeAttempt({ mode: 'random' })),
+      hasCurrentAnswer: true,
+    })
+    currentSearchParams = new URLSearchParams('mode=random&category=综合管理')
+
+    renderPage()
+
+    await screen.findByText('这是一道测试题目？')
+
+    const submitBtn = screen.getByText(/交卷/)
+    await act(async () => {
+      fireEvent.click(submitBtn)
+      await new Promise((r) => setTimeout(r, 0))
+    })
+
+    const confirmBtn = await screen.findByRole('button', { name: '确认交卷' })
+    await act(async () => {
+      fireEvent.click(confirmBtn)
+      await new Promise((r) => setTimeout(r, 0))
+    })
+
+    expect(mockSaveProgress).not.toHaveBeenCalled()
   })
 })

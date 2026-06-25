@@ -1,4 +1,4 @@
-// Slice 5: 顺序练习进度 CRUD 测试
+// 顺序练习进度 CRUD 测试 — 含参数化 key
 import { describe, it, expect } from 'vitest'
 import { saveProgress, getProgress } from './progress'
 
@@ -14,7 +14,7 @@ function openProgressDB(): Promise<IDBDatabase> {
   })
 }
 
-describe('saveProgress / getProgress', () => {
+describe('saveProgress / getProgress — 默认 key（向下兼容）', () => {
   it('无进度时 getProgress 返回 null', async () => {
     const db = await openProgressDB()
     const result = await getProgress(db)
@@ -41,5 +41,46 @@ describe('saveProgress / getProgress', () => {
     await saveProgress(db, 0)
     const result = await getProgress(db)
     expect(result).toBe(0)
+  })
+})
+
+describe('saveProgress / getProgress — 参数化 key', () => {
+  it('不同 key 的进度相互独立', async () => {
+    const db = await openProgressDB()
+    await saveProgress(db, 10, 'sequential:综合管理')
+    await saveProgress(db, 20, 'sequential:税务公共知识')
+
+    const resultA = await getProgress(db, 'sequential:综合管理')
+    const resultB = await getProgress(db, 'sequential:税务公共知识')
+
+    expect(resultA).toBe(10)
+    expect(resultB).toBe(20)
+  })
+
+  it('自定义 key 无记录时返回 null', async () => {
+    const db = await openProgressDB()
+    const result = await getProgress(db, 'sequential:综合管理')
+    expect(result).toBeNull()
+  })
+
+  it('同 key 多次保存覆盖旧值', async () => {
+    const db = await openProgressDB()
+    await saveProgress(db, 5, 'sequential:综合管理')
+    await saveProgress(db, 15, 'sequential:综合管理')
+
+    const result = await getProgress(db, 'sequential:综合管理')
+    expect(result).toBe(15)
+  })
+
+  it('默认 key 和自定义 key 相互独立', async () => {
+    const db = await openProgressDB()
+    await saveProgress(db, 99)                          // 默认 key "sequential"
+    await saveProgress(db, 42, 'sequential:综合管理')  // 自定义 key
+
+    const defaultResult = await getProgress(db)
+    const customResult = await getProgress(db, 'sequential:综合管理')
+
+    expect(defaultResult).toBe(99)
+    expect(customResult).toBe(42)
   })
 })
