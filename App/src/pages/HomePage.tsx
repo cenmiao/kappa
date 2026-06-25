@@ -256,8 +256,6 @@ export default function HomePage() {
         </button>
       </div>
 
-      {/* 底部信息 */}
-      <p className="text-center text-gray-300 text-xs mt-8">PWA 离线可用 · 题库 4000+ 题</p>
 
       {/* ── 管理员面板 Modal ── */}
       {showAdmin && (

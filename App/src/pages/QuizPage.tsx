@@ -47,8 +47,17 @@ export default function QuizPage() {
   // 逐题反馈状态（顺序/错题本模式）
   const [feedback, setFeedback] = useState<FeedbackResult | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  const [restarting, setRestarting] = useState(false)
   // 全部完成状态
   const [allDone, setAllDone] = useState(false)
+
+  // 检测全部完成（useEffect 避免闭包竞态）
+  useEffect(() => {
+    if (mode === 'sequential' && quiz.questions.length > 0 && quiz.isCurrentDone &&
+        quiz.currentIndex === quiz.totalQuestions - 1) {
+      setAllDone(true)
+    }
+  }, [mode, quiz.questions.length, quiz.isCurrentDone, quiz.currentIndex, quiz.totalQuestions])
 
   // ─── beforeunload：答题中离开拦截 ────────────────
   useBeforeUnload(!quiz.isSubmitted && quiz.totalQuestions > 0)
@@ -142,13 +151,7 @@ export default function QuizPage() {
     openDB()
       .then((db) => quiz.initQuiz(db, mode as 'random' | 'sequential' | 'wrongbook', category))
       .then(() => {
-        if (!cancelled) {
-          setQuizReady(true)
-          // 检测是否全部完成（顺序模式 currentIndex 停在最后一题且该题已 done）
-          if (mode === 'sequential' && quiz.questions.length > 0 && quiz.isCurrentDone) {
-            setAllDone(true)
-          }
-        }
+        if (!cancelled) setQuizReady(true)
       })
       .catch((err) => {
         if (!cancelled) {
@@ -196,16 +199,12 @@ export default function QuizPage() {
   // 进入下一题（清除反馈）
   const handleNextAfterFeedback = useCallback(() => {
     setFeedback(null)
-    // 检查是否全部完成
-    if (mode === 'sequential' && quiz.currentIndex >= quiz.totalQuestions - 1 && quiz.isCurrentDone) {
-      setAllDone(true)
-    } else {
-      quiz.goNext()
-    }
-  }, [quiz, mode])
+    quiz.goNext()
+  }, [quiz])
 
   // ─── 从头开始（顺序模式）──────────────────────
   const handleRestart = useCallback(async () => {
+    setRestarting(true)
     try {
       const db = await openDB()
       const category = searchParams.get('category') ?? '全部'
@@ -215,6 +214,8 @@ export default function QuizPage() {
       setFeedback(null)
     } catch {
       // ignore
+    } finally {
+      setRestarting(false)
     }
   }, [quiz, searchParams])
 
@@ -476,7 +477,7 @@ export default function QuizPage() {
             // 已完成状态的颜色
             let doneStyle = ''
             if (isDone) {
-              const correctAnswer = (feedback?.correctAnswer ?? q.answer ?? '') ?? q.answer ?? ''
+              const correctAnswer = feedback?.correctAnswer ?? q.answer ?? ''
               const isCorrectOption = correctAnswer.split(',').includes(letter)
               const isUserChoice = active
               if (isCorrectOption) {
@@ -647,9 +648,10 @@ export default function QuizPage() {
             <div className="flex gap-3 w-full mt-2">
               <button
                 onClick={handleRestart}
-                className="flex-1 py-3 rounded-xl bg-indigo-500 text-white text-sm font-medium active:bg-indigo-600 transition-colors"
+                disabled={restarting}
+                className="flex-1 py-3 rounded-xl bg-indigo-500 text-white text-sm font-medium active:bg-indigo-600 transition-colors disabled:opacity-50"
               >
-                从头开始
+                {restarting ? '加载中...' : '从头开始'}
               </button>
               <button
                 onClick={() => nav('/')}
