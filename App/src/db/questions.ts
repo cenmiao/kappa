@@ -41,10 +41,11 @@ export async function getAllQuestions(db: IDBDatabase): Promise<Question[]> {
   })
 }
 
-/** 按题型筛选 */
+/** 按题型筛选，可选按分类过滤 */
 export async function getQuestionsByType(
   db: IDBDatabase,
   type: QuestionType,
+  category?: string,
 ): Promise<Question[]> {
   return new Promise((resolve, reject) => {
     const tx = db.transaction('questions', 'readonly')
@@ -52,7 +53,12 @@ export async function getQuestionsByType(
     const req = store.getAll()
     req.onsuccess = () => {
       const all = req.result as Question[]
-      resolve(all.filter(q => q.type === type))
+      const byType = all.filter(q => q.type === type)
+      if (!category || category === '全部') {
+        resolve(byType)
+      } else {
+        resolve(byType.filter(q => q.category === category))
+      }
     }
     req.onerror = () => reject(req.error)
   })
@@ -95,22 +101,36 @@ export async function getQuestionsByIds(
   })
 }
 
-/** 从指定题型中随机抽取指定数量（不重复，可排除指定 ID） */
+/** 从指定题型中随机抽取指定数量，可选按分类过滤。池不足时允许重复；池为空时返回空数组 */
 export async function getRandomQuestions(
   db: IDBDatabase,
   type: QuestionType,
   count: number,
   excludeIds: number[] = [],
+  category?: string,
 ): Promise<Question[]> {
-  const all = await getQuestionsByType(db, type)
+  const all = await getQuestionsByType(db, type, category)
   // 过滤掉排除的 ID
   const excludeSet = new Set(excludeIds)
   const pool = all.filter(q => !excludeSet.has(q.id))
-  // Fisher-Yates 洗牌后取前 count 条
+
+  if (pool.length === 0) return []
+
+  // Fisher-Yates 洗牌
   const shuffled = [...pool]
   for (let i = shuffled.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1))
     ;[shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]]
   }
+
+  // 池不足时允许重复：循环取模补齐
+  if (shuffled.length < count) {
+    const result: Question[] = [...shuffled]
+    while (result.length < count) {
+      result.push(shuffled[result.length % shuffled.length])
+    }
+    return result
+  }
+
   return shuffled.slice(0, count)
 }

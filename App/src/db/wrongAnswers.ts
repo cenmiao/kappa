@@ -13,13 +13,18 @@ export async function getAllWrongAnswers(db: IDBDatabase): Promise<WrongAnswer[]
   })
 }
 
-/** 按题型读取错题 */
+/** 按题型读取错题，可选按分类过滤 */
 export async function getWrongAnswersByType(
   db: IDBDatabase,
   type: QuestionType,
+  category?: string,
 ): Promise<WrongAnswer[]> {
   const all = await getAllWrongAnswers(db)
-  return all.filter((w) => w.type === type)
+  const byType = all.filter((w) => w.type === type)
+  if (!category || category === '全部') {
+    return byType
+  }
+  return byType.filter((w) => w.category === category)
 }
 
 /** 按 questionId[] 批量读取错题 */
@@ -53,7 +58,7 @@ export async function getWrongAnswersByIds(
 /** 录入/更新错题。若已存在则 wrongCount+1 */
 export async function upsertWrongAnswers(
   db: IDBDatabase,
-  items: { questionId: number; type: QuestionType }[],
+  items: { questionId: number; type: QuestionType; category: string }[],
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     const tx = db.transaction('wrongAnswers', 'readwrite')
@@ -69,7 +74,7 @@ export async function upsertWrongAnswers(
         if (existing) {
           store.put({ ...existing, wrongCount: existing.wrongCount + 1 })
         } else {
-          store.put({ questionId: item.questionId, type: item.type, wrongCount: 1 })
+          store.put({ questionId: item.questionId, type: item.type, category: item.category, wrongCount: 1 })
         }
         pending--
         if (pending === 0) resolve()
