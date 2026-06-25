@@ -1,14 +1,44 @@
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { openDB } from '../db'
 import { getMeta } from '../db/progress'
 import { resetQuestionBank, loadQuestions } from '../db/loader'
 import ConfirmModal from '../components/ConfirmModal'
 
+const CATEGORIES = ['全部', '综合管理', '税务公共知识', '政治理论', '强基培训'] as const
+
 export default function HomePage() {
   const nav = useNavigate()
+  const location = useLocation()
   const [showPwaBanner, setShowPwaBanner] = useState(true)
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null)
+
+  // 题库分类选择 — 从 localStorage 恢复上次选择
+  const [category, setCategory] = useState(() => {
+    const saved = localStorage.getItem('kappa-category')
+    return saved && (CATEGORIES as readonly string[]).includes(saved) ? saved : CATEGORIES[0]
+  })
+
+  // 卡片描述文案 — 根据 category 动态替换
+  const randomDesc = category === '全部'
+    ? '全题库随机抽 80 题 · 单选 40 + 多选 20 + 判断 20'
+    : `${category} 随机抽 80 题 · 单选 40 + 多选 20 + 判断 20`
+  const sequentialDesc = category === '全部'
+    ? '按题库编号顺序答题，支持续上次进度'
+    : `${category} 按编号顺序答题，支持续上次进度`
+
+  // Toast 缺参提示
+  const [toast, setToast] = useState<string | null>(null)
+
+  // 检测缺参重定向 → 显示 Toast
+  useEffect(() => {
+    const state = location.state as { missingCategory?: boolean } | null
+    if (state?.missingCategory) {
+      setToast('请先选择题库')
+      const timer = setTimeout(() => setToast(null), 3000)
+      return () => clearTimeout(timer)
+    }
+  }, [location.state])
 
   // 管理员面板
   const [showAdmin, setShowAdmin] = useState(false)
@@ -69,6 +99,13 @@ export default function HomePage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-indigo-50 to-white px-5 py-10 flex flex-col relative">
+      {/* Toast 缺参提示 */}
+      {toast && (
+        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 bg-indigo-600 text-white px-5 py-2.5 rounded-full text-sm font-medium shadow-lg shadow-indigo-200">
+          ⚠ {toast}
+        </div>
+      )}
+
       {/* ⚙ 管理员入口 */}
       <button
         onClick={handleOpenAdmin}
@@ -107,18 +144,40 @@ export default function HomePage() {
         <p className="text-gray-500 text-sm">离线刷题 · 安全知识练习</p>
       </div>
 
+      {/* 题库分类选择器 */}
+      <div className="flex justify-center mb-6">
+        <div className="relative inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white border border-gray-200 shadow-sm">
+          <span className="text-xs text-gray-400 flex-shrink-0">📚</span>
+          <select
+            aria-label="题库分类选择"
+            value={category}
+            onChange={(e) => {
+              const val = e.target.value
+              setCategory(val)
+              localStorage.setItem('kappa-category', val)
+            }}
+            className="appearance-none bg-transparent text-sm font-medium text-gray-700 pr-5 cursor-pointer focus:outline-none"
+          >
+            {CATEGORIES.map((cat) => (
+              <option key={cat} value={cat}>{cat}</option>
+            ))}
+          </select>
+          <span className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400 text-[10px]">▼</span>
+        </div>
+      </div>
+
       {/* 卡片网格 */}
       <div className="flex flex-col gap-4 max-w-md mx-auto w-full flex-1">
         {/* 随机练习 — 主力入口（渐变卡片） */}
         <button
-          onClick={() => nav('/quiz')}
+          onClick={() => nav(`/quiz?mode=random&category=${category}`)}
           className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 p-6 text-left shadow-lg shadow-indigo-200 active:scale-[0.98] transition-transform"
         >
           <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -translate-y-1/2 translate-x-1/2" />
           <div className="relative z-10">
             <div className="text-4xl mb-3">🎯</div>
             <h2 className="text-xl font-bold text-white mb-1">随机练习</h2>
-            <p className="text-indigo-100 text-sm">全题库随机抽 80 题 · 单选 40 + 多选 20 + 判断 20</p>
+            <p className="text-indigo-100 text-sm">{randomDesc}</p>
             <div className="mt-4 inline-block bg-white/20 text-white text-xs px-3 py-1 rounded-full">
               满分 100 分
             </div>
@@ -127,14 +186,14 @@ export default function HomePage() {
 
         {/* 顺序练习 */}
         <button
-          onClick={() => nav('/quiz?mode=sequential')}
+          onClick={() => nav(`/quiz?mode=sequential&category=${category}`)}
           className="relative overflow-hidden rounded-2xl bg-white border border-gray-200 p-6 text-left shadow-sm active:scale-[0.98] transition-transform"
         >
           <div className="flex items-start gap-4">
             <div className="text-3xl">📋</div>
             <div className="flex-1">
               <h2 className="text-lg font-bold text-gray-900 mb-1">顺序练习</h2>
-              <p className="text-gray-500 text-sm">按题库编号顺序答题，支持续上次进度</p>
+              <p className="text-gray-500 text-sm">{sequentialDesc}</p>
             </div>
             <div className="text-gray-300 text-xl">→</div>
           </div>
@@ -142,7 +201,7 @@ export default function HomePage() {
 
         {/* 历史记录 */}
         <button
-          onClick={() => nav('/history')}
+          onClick={() => nav(`/history?category=${category}`)}
           className="relative overflow-hidden rounded-2xl bg-white border border-gray-200 p-6 text-left shadow-sm active:scale-[0.98] transition-transform"
         >
           <div className="flex items-start gap-4">
@@ -163,7 +222,7 @@ export default function HomePage() {
       {showAdmin && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           <div className="absolute inset-0 bg-black/40" onClick={() => { setShowAdmin(false); setResetMsg(null) }} />
-          <div className="relative bg-white rounded-2xl w-full max-w-sm mx-4 px-5 pt-6 pb-6 shadow-xl">
+          <div data-testid="admin-panel" className="relative bg-white rounded-2xl w-full max-w-sm mx-4 px-5 pt-6 pb-6 shadow-xl">
             <h3 className="text-lg font-bold text-gray-900 mb-4">题库管理</h3>
 
             {/* 版本信息 */}

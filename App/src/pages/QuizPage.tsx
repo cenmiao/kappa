@@ -23,6 +23,14 @@ export default function QuizPage() {
   const reviewQuestions = (location.state as { reviewQuestions?: Question[] } | null)?.reviewQuestions
   const isReviewMode = reviewQuestions && reviewQuestions.length > 0
 
+  // ─── category 守卫：缺参重定向回首页 ──────────────
+  useEffect(() => {
+    const category = searchParams.get('category')
+    if (!category) {
+      nav('/', { replace: true, state: { missingCategory: true } })
+    }
+  }, [searchParams, nav])
+
   const [pageState, setPageState] = useState<PageState>('loading')
   const [errorMsg, setErrorMsg] = useState('')
   const [quizReady, setQuizReady] = useState(false)

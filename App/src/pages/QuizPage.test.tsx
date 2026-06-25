@@ -61,12 +61,13 @@ vi.mock('../hooks/useBeforeUnload', () => ({
 }))
 
 const mockNav = vi.fn()
+let currentSearchParams = new URLSearchParams('mode=random&category=综合管理')
 vi.mock('react-router-dom', async () => {
   const actual = await vi.importActual('react-router-dom')
   return {
     ...actual,
     useNavigate: () => mockNav,
-    useSearchParams: () => [new URLSearchParams(), vi.fn()],
+    useSearchParams: () => [currentSearchParams, vi.fn()],
     useLocation: () => ({ state: null }),
   }
 })
@@ -110,6 +111,7 @@ beforeEach(() => {
   currentMockState = mockQuizState()
   mockLoadState = 'ready'
   mockIsReady = true
+  currentSearchParams = new URLSearchParams('mode=random&category=综合管理')
 })
 
 afterEach(() => {
@@ -285,5 +287,42 @@ describe('QuizPage — 题号自动居中', () => {
 
     const currentBtn = await screen.findByRole('button', { name: '1' })
     expect(currentBtn.className).toMatch(/ring|scale-110/)
+  })
+})
+
+// ─── Slice 2: 缺 category 参数重定向 ──────────────────────
+
+describe('QuizPage — 缺 category 参数重定向', () => {
+  it('无 category 参数时重定向到首页并传递 missingCategory 状态', async () => {
+    currentSearchParams = new URLSearchParams('mode=random') // 无 category
+    renderPage()
+
+    await waitFor(() => {
+      expect(mockNav).toHaveBeenCalledWith('/', {
+        replace: true,
+        state: { missingCategory: true },
+      })
+    })
+  })
+
+  it('category 参数为空字符串时也重定向', async () => {
+    currentSearchParams = new URLSearchParams('mode=random&category=')
+    renderPage()
+
+    await waitFor(() => {
+      expect(mockNav).toHaveBeenCalledWith('/', {
+        replace: true,
+        state: { missingCategory: true },
+      })
+    })
+  })
+
+  it('有 category 参数时不重定向，正常进入加载流程', async () => {
+    currentSearchParams = new URLSearchParams('mode=random&category=综合管理')
+    renderPage()
+
+    // 不应触发重定向
+    await screen.findByText('这是一道测试题目？')
+    expect(mockNav).not.toHaveBeenCalledWith('/', expect.anything())
   })
 })

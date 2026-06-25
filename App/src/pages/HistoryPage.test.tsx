@@ -213,3 +213,24 @@ describe('HistoryPage — 展开详情', () => {
     expect(await screen.findByText('暂无答题详情数据')).toBeInTheDocument()
   })
 })
+
+// ─── Slice 2: category 参数 ────────────────────────────
+
+describe('HistoryPage — category 参数', () => {
+  it('带 category 参数时页面正常渲染不崩溃', async () => {
+    const { getAllAttempts } = await import('../db/attempts')
+    vi.mocked(getAllAttempts).mockResolvedValue([
+      makeAttempt({ id: 'cat-test', score: 90, accuracy: 0.9 }),
+    ])
+
+    render(
+      <MemoryRouter initialEntries={['/history?category=综合管理']}>
+        <HistoryPage />
+      </MemoryRouter>,
+    )
+
+    // 正常显示记录行
+    await screen.findByTestId('attempt-row-cat-test')
+    expect(screen.getByTestId('stat-练习次数')).toBeInTheDocument()
+  })
+})
