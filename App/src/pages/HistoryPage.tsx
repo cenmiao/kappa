@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import type { Attempt } from '../types'
 import { openDB } from '../db'
 import { getAllAttempts } from '../db/attempts'
@@ -11,6 +11,10 @@ type PageState = 'loading' | 'ready'
 
 export default function HistoryPage() {
   const nav = useNavigate()
+  const [searchParams] = useSearchParams()
+  // Slice 5 将使用 category 参数过滤历史记录
+  const _category = searchParams.get('category') ?? undefined
+  void _category
   const [pageState, setPageState] = useState<PageState>('loading')
   const [attempts, setAttempts] = useState<Attempt[]>([])
   const [expandedId, setExpandedId] = useState<string | null>(null)
