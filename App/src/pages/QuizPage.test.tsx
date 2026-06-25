@@ -45,8 +45,10 @@ function mockQuizState(overrides: Record<string, unknown> = {}) {
     goPrev: mockGoPrev,
     goTo: mockGoTo,
     submit: vi.fn(),
+    submitOne: vi.fn(),
     hasCurrentAnswer: false,
     isCurrentUncertain: false,
+    isCurrentDone: false,
     hasShortage: false,
     ...overrides,
   }
@@ -98,6 +100,8 @@ vi.mock('../db/wrongAnswers', () => ({
 
 vi.mock('../db/progress', () => ({
   saveProgress: vi.fn(),
+  getDoneRecord: vi.fn(() => Promise.resolve(null)),
+  clearDoneRecord: vi.fn(),
 }))
 
 function renderPage() {
@@ -180,19 +184,16 @@ describe('QuizPage — 返回首页按钮', () => {
   it('答题态顶部栏有返回首页按钮', async () => {
     renderPage()
     await screen.findByText('这是一道测试题目？')
-    expect(screen.getByText('← 首页')).toBeInTheDocument()
+    expect(screen.getByText('← 返回')).toBeInTheDocument()
   })
 
   it('点击返回首页弹出确认弹窗', async () => {
     renderPage()
     await screen.findByText('这是一道测试题目？')
 
-    await act(async () => {
-      fireEvent.click(screen.getByText('← 首页'))
-      await new Promise((r) => setTimeout(r, 0))
-    })
+    fireEvent.click(screen.getByText('← 返回'))
 
-    expect(await screen.findByText('确认返回首页')).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: '确认返回' })).toBeInTheDocument()
     expect(screen.getByText(/当前答题进度不会保存/)).toBeInTheDocument()
   })
 
@@ -200,20 +201,14 @@ describe('QuizPage — 返回首页按钮', () => {
     renderPage()
     await screen.findByText('这是一道测试题目？')
 
-    await act(async () => {
-      fireEvent.click(screen.getByText('← 首页'))
-      await new Promise((r) => setTimeout(r, 0))
-    })
+    fireEvent.click(screen.getByText('← 返回'))
 
-    await screen.findByText('确认返回首页')
+    await screen.findByRole('heading', { name: '确认返回' })
 
-    await act(async () => {
-      fireEvent.click(screen.getByText('继续答题'))
-      await new Promise((r) => setTimeout(r, 0))
-    })
+    fireEvent.click(screen.getByRole('button', { name: '继续答题' }))
 
     await waitFor(() => {
-      expect(screen.queryByText('确认返回首页')).not.toBeInTheDocument()
+      expect(screen.queryByRole('heading', { name: '确认返回' })).not.toBeInTheDocument()
     })
     expect(screen.getByText('这是一道测试题目？')).toBeInTheDocument()
   })
@@ -221,25 +216,13 @@ describe('QuizPage — 返回首页按钮', () => {
   it('确认返回：跳转到 /', async () => {
     renderPage()
 
-    // 等待页面加载完成
     await screen.findByText('这是一道测试题目？')
 
-    const backBtn = screen.getByText('← 首页')
+    fireEvent.click(screen.getByText('← 返回'))
 
-    // 点击打开弹窗
-    await act(async () => {
-      fireEvent.click(backBtn)
-      await new Promise((r) => setTimeout(r, 0))
-    })
+    await screen.findByRole('heading', { name: '确认返回' })
 
-    const confirmHeading = await screen.findByText('确认返回首页')
-    expect(confirmHeading).toBeInTheDocument()
-
-    // 点击确认返回
-    await act(async () => {
-      fireEvent.click(screen.getByText('确认返回'))
-      await new Promise((r) => setTimeout(r, 0))
-    })
+    fireEvent.click(screen.getByRole('button', { name: '确认返回' }))
 
     expect(mockNav).toHaveBeenCalledWith('/')
   })
@@ -251,7 +234,7 @@ describe('QuizPage — 返回首页按钮', () => {
     await screen.findByText('这是一道测试题目？')
 
     await act(async () => {
-      fireEvent.click(screen.getByText('← 首页'))
+      fireEvent.click(screen.getByText('← 返回'))
       await new Promise((r) => setTimeout(r, 0))
     })
 
@@ -269,7 +252,7 @@ describe('QuizPage — loading/error 态返回首页', () => {
 
     renderPage()
 
-    const backBtn = await screen.findByText('← 首页')
+    const backBtn = await screen.findByText('← 返回')
     expect(backBtn).toBeInTheDocument()
 
     fireEvent.click(backBtn)
@@ -282,7 +265,7 @@ describe('QuizPage — loading/error 态返回首页', () => {
 
     renderPage()
 
-    const backBtn = await screen.findByText('← 首页')
+    const backBtn = await screen.findByText('← 返回')
     expect(backBtn).toBeInTheDocument()
   })
 })
@@ -407,87 +390,40 @@ describe('QuizPage — 顺序模式进度保存 key', () => {
     }
   }
 
-  it('顺序模式下交卷保存使用 "sequential:分类名" 键', async () => {
-    // 需要足够多的题目使 currentIndex=9 不越界
+  it('顺序模式下不显示交卷按钮', async () => {
     const qs = Array.from({ length: 10 }, (_, i) =>
       createMockQuestion({ id: i + 1, stem: `题目${i + 1}` })
     )
     currentMockState = mockQuizState({
-      mode: 'sequential',
       questions: qs,
-      currentIndex: 9,
-      startIndex: 0,
+      currentIndex: 0,
       totalQuestions: 10,
-      answeredCount: 10,
-      submit: vi.fn(() => makeAttempt()),
-      hasCurrentAnswer: true,
+      isCurrentDone: false,
     })
     currentSearchParams = new URLSearchParams('mode=sequential&category=综合管理')
 
     renderPage()
 
-    // 等待最后一题渲染
-    await screen.findByText('题目10')
-
-    // 点击交卷按钮（第 10 题是最后一题，按钮文字为 "✓ 交卷"）
-    const submitBtn = screen.getByText(/交卷/)
-    await act(async () => {
-      fireEvent.click(submitBtn)
-      await new Promise((r) => setTimeout(r, 0))
-    })
-
-    // 确认交卷
-    const confirmBtn = await screen.findByRole('button', { name: '确认交卷' })
-    await act(async () => {
-      fireEvent.click(confirmBtn)
-      await new Promise((r) => setTimeout(r, 0))
-    })
-
-    // 验证 saveProgress 被以正确参数调用
-    expect(mockSaveProgress).toHaveBeenCalledWith(
-      expect.any(Object),       // db
-      10,                        // startIndex(0) + currentIndex(9) + 1 = 10
-      'sequential:综合管理',     // category key
-    )
+    await screen.findByText('题目1')
+    // 顺序模式不应有交卷按钮
+    expect(screen.queryByText(/交卷/)).not.toBeInTheDocument()
+    // 不应有不确定标记按钮
+    expect(screen.queryByRole('button', { name: /标记/ })).not.toBeInTheDocument()
   })
 
-  it('顺序模式"全部"分类使用 "sequential:全部" 键', async () => {
-    const qs = Array.from({ length: 5 }, (_, i) =>
-      createMockQuestion({ id: i + 1, category: '综合管理', stem: `题目${i + 1}` })
-    )
+  it('顺序模式显示返回按钮和进度信息', async () => {
     currentMockState = mockQuizState({
-      mode: 'sequential',
-      questions: qs,
-      currentIndex: 4,
-      startIndex: 0,
-      totalQuestions: 5,
-      answeredCount: 5,
-      submit: vi.fn(() => makeAttempt({ category: '全部' })),
-      hasCurrentAnswer: true,
+      questions: [createMockQuestion({ category: '综合管理', stem: '题目1' })],
+      currentIndex: 0,
+      totalQuestions: 100,
     })
-    currentSearchParams = new URLSearchParams('mode=sequential&category=全部')
+    currentSearchParams = new URLSearchParams('mode=sequential&category=综合管理')
 
     renderPage()
 
-    await screen.findByText('题目5')
-
-    const submitBtn = screen.getByText(/交卷/)
-    await act(async () => {
-      fireEvent.click(submitBtn)
-      await new Promise((r) => setTimeout(r, 0))
-    })
-
-    const confirmBtn = await screen.findByRole('button', { name: '确认交卷' })
-    await act(async () => {
-      fireEvent.click(confirmBtn)
-      await new Promise((r) => setTimeout(r, 0))
-    })
-
-    expect(mockSaveProgress).toHaveBeenCalledWith(
-      expect.any(Object),
-      5,
-      'sequential:全部',
-    )
+    await screen.findByText('题目1')
+    expect(screen.getByText('← 返回')).toBeInTheDocument()
+    expect(screen.getByText(/综合管理 · 1\/100/)).toBeInTheDocument()
   })
 
   it('随机模式下交卷不调用 saveProgress', async () => {

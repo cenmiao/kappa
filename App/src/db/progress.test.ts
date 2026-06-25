@@ -1,6 +1,7 @@
-// 顺序练习进度 CRUD 测试 — 含参数化 key
+// 顺序练习进度 CRUD 测试 — 含参数化 key + done record
 import { describe, it, expect } from 'vitest'
-import { saveProgress, getProgress } from './progress'
+import { saveProgress, getProgress, saveDoneRecord, getDoneRecord, clearDoneRecord } from './progress'
+import type { DoneRecord } from '../types'
 
 function openProgressDB(): Promise<IDBDatabase> {
   const name = `test-progress-${crypto.randomUUID()}`
@@ -82,5 +83,66 @@ describe('saveProgress / getProgress — 参数化 key', () => {
 
     expect(defaultResult).toBe(99)
     expect(customResult).toBe(42)
+  })
+})
+
+describe('saveDoneRecord / getDoneRecord / clearDoneRecord', () => {
+  it('无记录时 getDoneRecord 返回 null', async () => {
+    const db = await openProgressDB()
+    const result = await getDoneRecord(db, '综合管理')
+    expect(result).toBeNull()
+  })
+
+  it('saveDoneRecord 后 getDoneRecord 返回保存的 done 记录', async () => {
+    const db = await openProgressDB()
+    const done: DoneRecord = {
+      1: { userAnswer: 'A', isCorrect: true },
+      3: { userAnswer: 'B', isCorrect: false },
+    }
+    await saveDoneRecord(db, '综合管理', done)
+
+    const result = await getDoneRecord(db, '综合管理')
+    expect(result).toEqual(done)
+  })
+
+  it('多次 saveDoneRecord 覆盖旧值', async () => {
+    const db = await openProgressDB()
+    await saveDoneRecord(db, '综合管理', { 1: { userAnswer: 'A', isCorrect: true } })
+    await saveDoneRecord(db, '综合管理', { 2: { userAnswer: 'B', isCorrect: false } })
+
+    const result = await getDoneRecord(db, '综合管理')
+    expect(result).toEqual({ 2: { userAnswer: 'B', isCorrect: false } })
+  })
+
+  it('不同分类的 done 记录相互独立', async () => {
+    const db = await openProgressDB()
+    const doneA: DoneRecord = { 10: { userAnswer: 'A', isCorrect: true } }
+    const doneB: DoneRecord = { 20: { userAnswer: 'B', isCorrect: false } }
+    await saveDoneRecord(db, '综合管理', doneA)
+    await saveDoneRecord(db, '税务公共知识', doneB)
+
+    expect(await getDoneRecord(db, '综合管理')).toEqual(doneA)
+    expect(await getDoneRecord(db, '税务公共知识')).toEqual(doneB)
+  })
+
+  it('clearDoneRecord 清空指定分类的 done 记录', async () => {
+    const db = await openProgressDB()
+    await saveDoneRecord(db, '综合管理', { 1: { userAnswer: 'A', isCorrect: true } })
+    await clearDoneRecord(db, '综合管理')
+
+    const result = await getDoneRecord(db, '综合管理')
+    expect(result).toBeNull()
+  })
+
+  it('done 记录与普通进度 key 相互独立', async () => {
+    const db = await openProgressDB()
+    await saveProgress(db, 5, 'sequential:综合管理')
+    await saveDoneRecord(db, '综合管理', { 1: { userAnswer: 'A', isCorrect: true } })
+
+    const progress = await getProgress(db, 'sequential:综合管理')
+    const done = await getDoneRecord(db, '综合管理')
+
+    expect(progress).toBe(5)
+    expect(done).toEqual({ 1: { userAnswer: 'A', isCorrect: true } })
   })
 })

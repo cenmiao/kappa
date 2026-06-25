@@ -38,6 +38,14 @@ export interface Meta {
   categories?: Record<string, number>
 }
 
+// 顺序练习已完成记录（key = questionId）
+export interface DoneRecord {
+  [questionId: number]: {
+    userAnswer: string
+    isCorrect: boolean
+  }
+}
+
 // 一次完整的练习记录
 export interface Attempt {
   id: string

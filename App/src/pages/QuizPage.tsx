@@ -5,18 +5,21 @@ import { getLoadState, getLoadError, loadQuestions, isQuestionBankReady } from '
 import { openDB } from '../db'
 import { saveAttempt } from '../db/attempts'
 import { upsertWrongAnswers } from '../db/wrongAnswers'
-import { saveProgress } from '../db/progress'
+import { saveProgress, getDoneRecord, clearDoneRecord } from '../db/progress'
 import useQuizState from '../hooks/useQuizState'
 import { useBeforeUnload } from '../hooks/useBeforeUnload'
 import ConfirmModal from '../components/ConfirmModal'
 
 type PageState = 'loading' | 'error' | 'ready'
 
+type FeedbackResult = { isCorrect: boolean; correctAnswer: string; explanation: string }
+
 export default function QuizPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const nav = useNavigate()
   const location = useLocation()
-  const mode = (searchParams.get('mode') ?? 'random') as 'random' | 'sequential'
+  const mode = (searchParams.get('mode') ?? 'random') as 'random' | 'sequential' | 'wrongbook'
+  const isInstantMode = mode === 'sequential' || mode === 'wrongbook'
   const simulateError = searchParams.get('loadError') === 'true'
 
   // 复习模式：从路由 state 获取题目列表
@@ -40,6 +43,21 @@ export default function QuizPage() {
   const contentRef = useRef<HTMLDivElement>(null)
 
   const quiz = useQuizState()
+
+  // 逐题反馈状态（顺序/错题本模式）
+  const [feedback, setFeedback] = useState<FeedbackResult | null>(null)
+  const [submitting, setSubmitting] = useState(false)
+  const [restarting, setRestarting] = useState(false)
+  // 全部完成状态
+  const [allDone, setAllDone] = useState(false)
+
+  // 检测全部完成（useEffect 避免闭包竞态）
+  useEffect(() => {
+    if (mode === 'sequential' && quiz.questions.length > 0 && quiz.isCurrentDone &&
+        quiz.currentIndex === quiz.totalQuestions - 1) {
+      setAllDone(true)
+    }
+  }, [mode, quiz.questions.length, quiz.isCurrentDone, quiz.currentIndex, quiz.totalQuestions])
 
   // ─── beforeunload：答题中离开拦截 ────────────────
   useBeforeUnload(!quiz.isSubmitted && quiz.totalQuestions > 0)
@@ -131,7 +149,7 @@ export default function QuizPage() {
 
     const category = searchParams.get('category') ?? '全部'
     openDB()
-      .then((db) => quiz.initQuiz(db, mode, category))
+      .then((db) => quiz.initQuiz(db, mode as 'random' | 'sequential' | 'wrongbook', category))
       .then(() => {
         if (!cancelled) setQuizReady(true)
       })
@@ -159,6 +177,47 @@ export default function QuizPage() {
       loadQuestions().then(() => checkAndLoad())
     }
   }
+
+  // ─── 逐题提交（顺序/错题本模式）──────────────────
+  const handleSubmitOne = useCallback(async () => {
+    if (submitting) return
+    setSubmitting(true)
+    try {
+      const db = await openDB()
+      const category = searchParams.get('category') ?? '全部'
+      const result = await quiz.submitOne(db, mode as 'sequential' | 'wrongbook', category)
+      if (result) {
+        setFeedback(result)
+      }
+    } catch {
+      // ignore
+    } finally {
+      setSubmitting(false)
+    }
+  }, [submitting, quiz, mode, searchParams])
+
+  // 进入下一题（清除反馈）
+  const handleNextAfterFeedback = useCallback(() => {
+    setFeedback(null)
+    quiz.goNext()
+  }, [quiz])
+
+  // ─── 从头开始（顺序模式）──────────────────────
+  const handleRestart = useCallback(async () => {
+    setRestarting(true)
+    try {
+      const db = await openDB()
+      const category = searchParams.get('category') ?? '全部'
+      await clearDoneRecord(db, category)
+      await quiz.initQuiz(db, 'sequential', category)
+      setAllDone(false)
+      setFeedback(null)
+    } catch {
+      // ignore
+    } finally {
+      setRestarting(false)
+    }
+  }, [quiz, searchParams])
 
   // ─── 交卷流程 ──────────────────────────────────
   const handleSubmitConfirm = useCallback(async () => {
@@ -220,7 +279,7 @@ export default function QuizPage() {
           onClick={() => nav('/')}
           className="absolute top-4 left-4 text-xs font-medium text-gray-400 hover:text-gray-500 transition-colors"
         >
-          ← 首页
+          ← 返回
         </button>
         <div className="w-10 h-10 border-4 border-indigo-200 border-t-indigo-500 rounded-full animate-spin mb-4" />
         <p className="text-sm text-gray-400">题库加载中...</p>
@@ -238,7 +297,7 @@ export default function QuizPage() {
           onClick={() => nav('/')}
           className="absolute top-4 left-4 text-xs font-medium text-gray-400 hover:text-gray-500 transition-colors"
         >
-          ← 首页
+          ← 返回
         </button>
         <div className="text-5xl mb-4">😵</div>
         <h2 className="text-lg font-bold text-gray-800 mb-2">加载失败</h2>
@@ -269,7 +328,7 @@ export default function QuizPage() {
           onClick={() => nav('/')}
           className="absolute top-4 left-4 text-xs font-medium text-gray-400 hover:text-gray-500 transition-colors"
         >
-          ← 首页
+          ← 返回
         </button>
         <div className="w-10 h-10 border-4 border-indigo-200 border-t-indigo-500 rounded-full animate-spin mb-4" />
         <p className="text-sm text-gray-400">正在准备题目...</p>
@@ -281,6 +340,28 @@ export default function QuizPage() {
   //  ready — 答题中
   // ══════════════════════════════════════════════════════
   const q = quiz.questions[quiz.currentIndex]
+  // 错题本空状态
+  if (!q && mode === 'wrongbook' && quiz.questions.length === 0) {
+    return (
+      <div className="min-h-screen bg-white flex flex-col items-center justify-center px-5 text-center relative">
+        <button
+          onClick={() => nav('/')}
+          className="absolute top-4 left-4 text-xs font-medium text-gray-400 hover:text-gray-500 transition-colors"
+        >
+          ← 返回
+        </button>
+        <div className="text-5xl mb-4">🎉</div>
+        <h2 className="text-lg font-bold text-gray-800 mb-2">错题本已清空</h2>
+        <p className="text-sm text-gray-400 mb-6">当前分类没有错题，继续保持！</p>
+        <button
+          onClick={() => nav('/')}
+          className="px-8 py-3 rounded-xl bg-indigo-500 text-white text-sm font-medium active:bg-indigo-600 transition-colors"
+        >
+          返回首页
+        </button>
+      </div>
+    )
+  }
   if (!q) return null
 
   const unansweredCount = quiz.totalQuestions - quiz.answeredCount
@@ -314,22 +395,29 @@ export default function QuizPage() {
           />
         </div>
         <div className="px-4 py-2 flex items-center justify-between">
-          {/* 左侧：返回首页 */}
+          {/* 左侧：返回 */}
           <button
             onClick={() => setShowBackConfirm(true)}
             className="text-xs font-medium text-gray-400 hover:text-gray-500 transition-colors"
           >
-            ← 首页
+            ← 返回
           </button>
+          {/* 中间：进度信息 */}
           <span className="text-xs font-medium text-gray-400">
-            第 {quiz.currentIndex + 1}/{quiz.totalQuestions} 题
+            {mode === 'wrongbook'
+              ? `错题本 · ${q.category} · ${quiz.currentIndex + 1}/${quiz.totalQuestions}`
+              : isInstantMode
+                ? `${q.category} · ${quiz.currentIndex + 1}/${quiz.totalQuestions}`
+                : `第 ${quiz.currentIndex + 1}/${quiz.totalQuestions} 题`
+            }
           </span>
-          <div className="flex items-center gap-3">
-            {/* 分类标签 */}
-            <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-green-50 text-green-600">
-              {q.category}
-            </span>
-            {/* 题型标签 */}
+          {/* 右侧：题型标签 + 分类标签（仅随机模式） */}
+          <div className="flex items-center gap-2">
+            {!isInstantMode && (
+              <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-green-50 text-green-600">
+                {q.category}
+              </span>
+            )}
             <span
               className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${typeBadge.bg} ${typeBadge.text}`}
             >
@@ -352,66 +440,159 @@ export default function QuizPage() {
         {/* 题干 */}
         <div className="mb-5">
           <p className="text-lg leading-relaxed text-gray-900 font-medium">{q.stem}</p>
-          {q.type === 'multi' && (
+          {q.type === 'multi' && !isInstantMode && (
             <p className="text-xs text-purple-500 mt-2">多选题 · 全对得 2 分</p>
+          )}
+          {q.type === 'multi' && isInstantMode && (
+            <p className="text-xs text-purple-500 mt-2">多选题 · 选择后点击提交</p>
           )}
         </div>
 
-        {/* 不确定标记按钮 — 居中胶囊 */}
-        <div className="flex justify-center mb-5">
-          <button
-            onClick={quiz.toggleUncertain}
-            className={`inline-flex items-center gap-1.5 px-5 py-2 rounded-full border-2 text-sm font-medium transition-all active:scale-[0.98] ${
-              quiz.isCurrentUncertain
-                ? 'border-rose-300 bg-rose-50 text-rose-600'
-                : 'border-gray-200 bg-white text-gray-400 hover:border-gray-300'
-            }`}
-            aria-label={quiz.isCurrentUncertain ? '取消标记' : '标记为不确定'}
-          >
-            <span>{quiz.isCurrentUncertain ? '⚑' : '⚐'}</span>
-            <span>{quiz.isCurrentUncertain ? '已标记为不确定' : '标记为不确定'}</span>
-          </button>
-        </div>
+        {/* 不确定标记按钮 — 仅随机模式 */}
+        {!isInstantMode && (
+          <div className="flex justify-center mb-5">
+            <button
+              onClick={quiz.toggleUncertain}
+              className={`inline-flex items-center gap-1.5 px-5 py-2 rounded-full border-2 text-sm font-medium transition-all active:scale-[0.98] ${
+                quiz.isCurrentUncertain
+                  ? 'border-rose-300 bg-rose-50 text-rose-600'
+                  : 'border-gray-200 bg-white text-gray-400 hover:border-gray-300'
+              }`}
+              aria-label={quiz.isCurrentUncertain ? '取消标记' : '标记为不确定'}
+            >
+              <span>{quiz.isCurrentUncertain ? '⚑' : '⚐'}</span>
+              <span>{quiz.isCurrentUncertain ? '已标记为不确定' : '标记为不确定'}</span>
+            </button>
+          </div>
+        )}
 
         {/* 大号选项按钮 */}
         <div className="flex flex-col gap-3">
           {q.options.map((opt, idx) => {
             const letter = optionLabels[idx]
             const active = isSelected(letter)
-            // 去除选项文本中的字母前缀（如 "A. " 或 "A."）
             const text = opt.replace(/^[A-F][.、\s]+/, '')
+            const isDone = quiz.isCurrentDone
+
+            // 已完成状态的颜色
+            let doneStyle = ''
+            if (isDone) {
+              const correctAnswer = feedback?.correctAnswer ?? q.answer ?? ''
+              const isCorrectOption = correctAnswer.split(',').includes(letter)
+              const isUserChoice = active
+              if (isCorrectOption) {
+                doneStyle = 'border-green-400 bg-green-50'
+              } else if (isUserChoice && !isCorrectOption) {
+                doneStyle = 'border-red-400 bg-red-50'
+              } else {
+                doneStyle = 'border-gray-100 bg-gray-50 opacity-60'
+              }
+            }
 
             return (
               <button
                 key={letter}
-                onClick={() => quiz.selectOption(letter)}
-                className={`flex items-center gap-4 w-full px-5 py-4 rounded-2xl border-2 transition-all duration-200 active:scale-[0.98] ${
-                  active
-                    ? 'border-indigo-400 bg-indigo-50 shadow-sm'
-                    : 'border-gray-100 bg-gray-50 hover:border-gray-200'
+                onClick={async () => {
+                  if (isDone) return
+                  quiz.selectOption(letter)
+                  // 即时模式：单选/判断自动提交
+                  if (isInstantMode && q.type !== 'multi' && !submitting) {
+                    setSubmitting(true)
+                    try {
+                      const db = await openDB()
+                      const category = searchParams.get('category') ?? '全部'
+                      const result = await quiz.submitOne(db, mode as 'sequential' | 'wrongbook', category, letter)
+                      if (result) setFeedback(result)
+                    } catch { /* ignore */ }
+                    finally { setSubmitting(false) }
+                  }
+                }}
+                disabled={isDone}
+                className={`flex items-center gap-4 w-full px-5 py-4 rounded-2xl border-2 transition-all duration-200 ${
+                  isDone
+                    ? doneStyle + ' cursor-default'
+                    : active
+                      ? 'border-indigo-400 bg-indigo-50 shadow-sm active:scale-[0.98]'
+                      : 'border-gray-100 bg-gray-50 hover:border-gray-200 active:scale-[0.98]'
                 }`}
               >
-                {/* 选项标签（字母或 ✓） */}
                 <span
                   className={`w-9 h-9 rounded-xl flex items-center justify-center text-sm font-bold flex-shrink-0 transition-colors ${
-                    active
-                      ? 'bg-indigo-500 text-white'
-                      : 'bg-white border-2 border-gray-200 text-gray-400'
+                    isDone && (feedback?.correctAnswer ?? q.answer ?? '').split(',').includes(letter)
+                      ? 'bg-green-500 text-white'
+                      : isDone && active && !(feedback?.correctAnswer ?? q.answer ?? '').split(',').includes(letter)
+                        ? 'bg-red-500 text-white'
+                        : active && !isDone
+                          ? 'bg-indigo-500 text-white'
+                          : 'bg-white border-2 border-gray-200 text-gray-400'
                   }`}
                 >
-                  {active ? '✓' : letter}
+                  {isDone && (feedback?.correctAnswer ?? q.answer ?? '').split(',').includes(letter) ? '✓' : active && isDone ? '✗' : active ? '✓' : letter}
                 </span>
-                <span
-                  className={`text-base text-left ${
-                    active ? 'text-indigo-900 font-medium' : 'text-gray-700'
-                  }`}
-                >
+                <span className={`text-base text-left ${
+                  isDone && (feedback?.correctAnswer ?? q.answer ?? '').split(',').includes(letter)
+                    ? 'text-green-700 font-medium'
+                    : isDone && active
+                      ? 'text-red-700'
+                      : active && !isDone
+                        ? 'text-indigo-900 font-medium'
+                        : 'text-gray-700'
+                }`}>
                   {text}
                 </span>
               </button>
             )
           })}
         </div>
+
+        {/* 多选提交按钮（即时模式） */}
+        {isInstantMode && q.type === 'multi' && !quiz.isCurrentDone && (
+          <div className="mt-4">
+            <button
+              onClick={handleSubmitOne}
+              disabled={submitting}
+              className="w-full py-3 rounded-xl bg-indigo-500 text-white text-sm font-medium active:bg-indigo-600 transition-colors disabled:opacity-50"
+            >
+              {submitting ? '提交中...' : '提交答案'}
+            </button>
+          </div>
+        )}
+
+        {/* 反馈区域（即时模式） */}
+        {isInstantMode && (() => {
+          // 推导显示用的 feedback：优先用当前 feedback 状态，已完成的题从数据推导
+          let displayFeedback = feedback
+          if (!displayFeedback && quiz.isCurrentDone) {
+            const userAns = quiz.currentAnswer
+            const correctAns = q.answer ?? ''
+            const isMulti = q.type === 'multi'
+            const isCorrect = isMulti
+              ? userAns.split(',').sort().join(',') === correctAns.split(',').sort().join(',')
+              : userAns === correctAns
+            displayFeedback = { isCorrect, correctAnswer: correctAns, explanation: q.explanation ?? '' }
+          }
+          if (!displayFeedback) return null
+
+          return (
+            <div className={`mt-4 p-4 rounded-xl border-2 ${
+              displayFeedback.isCorrect ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'
+            }`}>
+              <p className={`text-sm font-bold mb-2 ${
+                displayFeedback.isCorrect ? 'text-green-600' : 'text-red-600'
+              }`}>
+                {displayFeedback.isCorrect ? '✅ 回答正确' : '❌ 回答错误'}
+              </p>
+              {!displayFeedback.isCorrect && (
+                <p className="text-sm text-gray-600 mb-2">
+                  正确答案：<span className="font-bold text-green-600">{displayFeedback.correctAnswer}</span>
+                </p>
+              )}
+              {displayFeedback.explanation && (
+                <p className="text-sm text-gray-500 leading-relaxed">{displayFeedback.explanation}</p>
+              )}
+            </div>
+          )
+        })()}
       </div>
 
       {/* ── 底部缩略图导航 + 操作区 ── */}
@@ -423,13 +604,15 @@ export default function QuizPage() {
             const isCurrent = idx === quiz.currentIndex
             const isAnswered = a?.userAnswer !== '' && a?.userAnswer !== undefined
             const isFlagged = a?.isUncertain
+            const isDone = a?.isSubmitted
 
             let cellStyle = 'bg-gray-100 text-gray-400'
-            if (isFlagged && !isCurrent) {
-              cellStyle = 'bg-amber-100 text-amber-600'
-            }
             if (isCurrent) {
               cellStyle = 'ring-2 ring-indigo-400 ring-offset-1 bg-indigo-100 text-indigo-700 scale-110'
+            } else if (isDone) {
+              cellStyle = 'bg-green-100 text-green-700'
+            } else if (isFlagged && !isCurrent) {
+              cellStyle = 'bg-amber-100 text-amber-600'
             } else if (isAnswered && !isFlagged) {
               cellStyle = 'bg-green-100 text-green-700'
             }
@@ -444,62 +627,114 @@ export default function QuizPage() {
                     thumbRefs.current.delete(idx)
                   }
                 }}
-                onClick={() => quiz.goTo(idx)}
+                onClick={() => {
+                  setFeedback(null)
+                  quiz.goTo(idx)
+                }}
                 className={`flex-shrink-0 w-7 h-7 rounded-md text-[10px] font-medium flex items-center justify-center transition-all ${cellStyle}`}
               >
-                {isFlagged ? '⚑' : idx + 1}
+                {isFlagged && !isInstantMode ? '⚑' : idx + 1}
               </button>
             )
           })}
         </div>
 
         {/* 底部按钮 */}
-        <div className="px-4 py-3 flex gap-3">
-          {/* 上一题 */}
-          <button
-            onClick={quiz.goPrev}
-            disabled={isFirstQuestion}
-            className="w-12 h-12 rounded-xl border border-gray-200 flex items-center justify-center text-gray-400 disabled:opacity-20 active:bg-gray-50 transition-colors flex-shrink-0"
-          >
-            ←
-          </button>
-
-          {!isLastQuestion ? (
-            <>
-              {/* 下一题（主按钮） */}
+        {allDone ? (
+          /* 全部完成状态 */
+          <div className="px-4 py-6 flex flex-col items-center gap-3">
+            <p className="text-2xl">🎉</p>
+            <p className="text-sm font-bold text-gray-800">你已完成本分类全部题目</p>
+            <div className="flex gap-3 w-full mt-2">
               <button
-                onClick={quiz.goNext}
-                className="flex-1 py-3 rounded-xl bg-gray-900 text-white text-sm font-medium active:bg-gray-800 transition-colors"
+                onClick={handleRestart}
+                disabled={restarting}
+                className="flex-1 py-3 rounded-xl bg-indigo-500 text-white text-sm font-medium active:bg-indigo-600 transition-colors disabled:opacity-50"
               >
-                下一题
+                {restarting ? '加载中...' : '从头开始'}
               </button>
-              {/* 交卷（小按钮） */}
               <button
-                onClick={() => setShowConfirm(true)}
-                className="w-12 h-12 rounded-xl border border-gray-200 flex items-center justify-center text-xs text-gray-400 active:bg-gray-50 transition-colors flex-shrink-0"
+                onClick={() => nav('/')}
+                className="flex-1 py-3 rounded-xl border border-gray-200 text-gray-500 text-sm font-medium active:bg-gray-50 transition-colors"
               >
-                交卷
+                返回首页
               </button>
-            </>
-          ) : (
-            <>
-              {/* 末尾题：绿色渐变交卷按钮 */}
+            </div>
+          </div>
+        ) : isInstantMode ? (
+          /* 即时模式按钮 */
+          <div className="px-4 py-3 flex gap-3">
+            <button
+              onClick={() => { setFeedback(null); quiz.goPrev() }}
+              disabled={isFirstQuestion}
+              className="w-12 h-12 rounded-xl border border-gray-200 flex items-center justify-center text-gray-400 disabled:opacity-20 active:bg-gray-50 transition-colors flex-shrink-0"
+            >
+              ←
+            </button>
+            <button
+              onClick={feedback ? handleNextAfterFeedback : quiz.goNext}
+              disabled={(!feedback && isLastQuestion)}
+              className={`flex-1 py-3 rounded-xl text-sm font-medium active:scale-[0.98] transition-all ${
+                isLastQuestion && !feedback
+                  ? 'bg-gray-100 text-gray-300'
+                  : 'bg-gray-900 text-white active:bg-gray-800'
+              }`}
+            >
+              {isLastQuestion && feedback ? '最后一道' : isLastQuestion ? '已是最后' : '下一题'}
+            </button>
+            {!isLastQuestion && (
               <button
-                onClick={() => setShowConfirm(true)}
-                className="flex-1 py-3 rounded-xl bg-gradient-to-r from-green-500 to-emerald-500 text-white text-sm font-medium active:from-green-600 active:to-emerald-600 transition-colors"
-              >
-                ✓ 交卷 ({quiz.answeredCount}/{quiz.totalQuestions})
-              </button>
-              {/* 末尾题禁用下一题 */}
-              <button
-                disabled
-                className="w-12 h-12 rounded-xl border border-gray-200 flex items-center justify-center text-gray-400 opacity-20 flex-shrink-0"
+                onClick={feedback ? handleNextAfterFeedback : quiz.goNext}
+                className="w-12 h-12 rounded-xl border border-gray-200 flex items-center justify-center text-gray-400 active:bg-gray-50 transition-colors flex-shrink-0"
               >
                 →
               </button>
-            </>
-          )}
-        </div>
+            )}
+          </div>
+        ) : (
+          /* 随机模式按钮（保持原样） */
+          <div className="px-4 py-3 flex gap-3">
+            <button
+              onClick={quiz.goPrev}
+              disabled={isFirstQuestion}
+              className="w-12 h-12 rounded-xl border border-gray-200 flex items-center justify-center text-gray-400 disabled:opacity-20 active:bg-gray-50 transition-colors flex-shrink-0"
+            >
+              ←
+            </button>
+
+            {!isLastQuestion ? (
+              <>
+                <button
+                  onClick={quiz.goNext}
+                  className="flex-1 py-3 rounded-xl bg-gray-900 text-white text-sm font-medium active:bg-gray-800 transition-colors"
+                >
+                  下一题
+                </button>
+                <button
+                  onClick={() => setShowConfirm(true)}
+                  className="w-12 h-12 rounded-xl border border-gray-200 flex items-center justify-center text-xs text-gray-400 active:bg-gray-50 transition-colors flex-shrink-0"
+                >
+                  交卷
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  onClick={() => setShowConfirm(true)}
+                  className="flex-1 py-3 rounded-xl bg-gradient-to-r from-green-500 to-emerald-500 text-white text-sm font-medium active:from-green-600 active:to-emerald-600 transition-colors"
+                >
+                  ✓ 交卷 ({quiz.answeredCount}/{quiz.totalQuestions})
+                </button>
+                <button
+                  disabled
+                  className="w-12 h-12 rounded-xl border border-gray-200 flex items-center justify-center text-gray-400 opacity-20 flex-shrink-0"
+                >
+                  →
+                </button>
+              </>
+            )}
+          </div>
+        )}
       </div>
 
       {/* ── 交卷确认弹窗 ── */}
@@ -519,13 +754,13 @@ export default function QuizPage() {
         )}
       </ConfirmModal>
 
-      {/* ── 返回首页确认弹窗 ── */}
+      {/* ── 返回确认弹窗 ── */}
       <ConfirmModal
         open={showBackConfirm}
-        title="确认返回首页"
-        message="当前答题进度不会保存，确定要返回吗？"
+        title="确认返回"
+        message={isInstantMode ? '进度已自动保存，确定返回首页吗？' : '当前答题进度不会保存，确定要返回吗？'}
         confirmLabel="确认返回"
-        cancelLabel="继续答题"
+        cancelLabel={isInstantMode ? '继续练习' : '继续答题'}
         confirmVariant="green"
         onConfirm={() => {
           setShowBackConfirm(false)
@@ -533,7 +768,7 @@ export default function QuizPage() {
         }}
         onCancel={() => setShowBackConfirm(false)}
       >
-        {quiz.answeredCount > 0 && (
+        {!isInstantMode && quiz.answeredCount > 0 && (
           <p className="text-sm text-red-500 font-medium">
             已答 {quiz.answeredCount}/{quiz.totalQuestions} 题，返回后进度将丢失
           </p>

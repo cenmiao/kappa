@@ -3,8 +3,8 @@
 import { useState, useCallback, useMemo } from 'react'
 import type { Question, AnswerRecord, Attempt } from '../types'
 import { getRandomQuestions, getAllQuestions, getQuestionsByIds, getQuestionsByType } from '../db/questions'
-import { getWrongAnswersByType } from '../db/wrongAnswers'
-import { getProgress } from '../db/progress'
+import { getWrongAnswersByType, getAllWrongAnswers, upsertWrongAnswers, deleteWrongAnswer } from '../db/wrongAnswers'
+import { getProgress, getDoneRecord, saveDoneRecord } from '../db/progress'
 
 export interface QuizState {
   questions: Question[]
@@ -22,7 +22,7 @@ export interface QuizState {
 
 interface QuizActions {
   /** 初始化题库：从 IndexedDB 抽题并打乱 */
-  initQuiz: (db: IDBDatabase, mode: 'random' | 'sequential', category?: string) => Promise<void>
+  initQuiz: (db: IDBDatabase, mode: 'random' | 'sequential' | 'wrongbook', category?: string) => Promise<void>
   initWithQuestions: (questions: Question[]) => void
   /** 选择/取消选项。单选/判断替换；多选 toggle */
   selectOption: (letter: string) => void
@@ -34,12 +34,20 @@ interface QuizActions {
   goPrev: () => void
   /** 跳转到指定题号 */
   goTo: (index: number) => void
-  /** 交卷：计算得分、生成 AnswerRecord[] 和 Attempt 对象 */
+  /** 交卷：计算得分、生成 AnswerRecord[] 和 Attempt 对象（仅随机模式） */
   submit: () => Attempt | null
+  /** 逐题提交（顺序/错题本模式）：判对错、保存 done 记录、写入错题池 */
+  submitOne: (db: IDBDatabase, mode: 'sequential' | 'wrongbook', category: string) => Promise<{
+    isCorrect: boolean
+    correctAnswer: string
+    explanation: string
+  } | null>
   /** 当前题是否已答 */
   hasCurrentAnswer: boolean
   /** 当前题是否标记为不确定 */
   isCurrentUncertain: boolean
+  /** 当前题是否已完成（顺序/错题本模式） */
+  isCurrentDone: boolean
 }
 
 function shuffle<T>(arr: T[]): T[] {
@@ -54,7 +62,7 @@ function shuffle<T>(arr: T[]): T[] {
 export default function useQuizState(): QuizState & QuizActions {
   const [questions, setQuestions] = useState<Question[]>([])
   const [currentIndex, setCurrentIndex] = useState(0)
-  const [answers, setAnswers] = useState<Record<number, { userAnswer: string; isUncertain: boolean }>>({})
+  const [answers, setAnswers] = useState<Record<number, { userAnswer: string; isUncertain: boolean; isSubmitted?: boolean }>>({})
   const [isSubmitted, setIsSubmitted] = useState(false)
   const [startIndex, setStartIndex] = useState(0)
   const [hasShortage, setHasShortage] = useState(false)
@@ -62,12 +70,28 @@ export default function useQuizState(): QuizState & QuizActions {
   const totalQuestions = questions.length
 
   /** 从 IndexedDB 出题 */
-  const initQuiz = useCallback(async (db: IDBDatabase, mode: 'random' | 'sequential', category: string = '全部') => {
+  const initQuiz = useCallback(async (db: IDBDatabase, mode: 'random' | 'sequential' | 'wrongbook', category: string = '全部') => {
     let picked: Question[]
     let resumeIndex = 0
     let shortage = false
+    let done: Record<number, { userAnswer: string; isCorrect: boolean }> | null = null
 
-    if (mode === 'random') {
+    if (mode === 'wrongbook') {
+      // 错题本模式：从错题池加载，随机排列
+      const wrongItems = await getAllWrongAnswers(db)
+      const filtered = category === '全部'
+        ? wrongItems
+        : wrongItems.filter(w => w.category === category)
+      const wrongIds = filtered.map(w => w.questionId)
+
+      if (wrongIds.length > 0) {
+        const wrongQs = await getQuestionsByIds(db, wrongIds)
+        // 随机排列
+        picked = shuffle(wrongQs)
+      } else {
+        picked = []
+      }
+    } else if (mode === 'random') {
       // —— 配额弹性分配：检查各题型是否缺失 ——
       const BASE_QUOTAS = { single: 40, multi: 20, tf: 20 }
       const typeKeys = ['single', 'multi', 'tf'] as const
@@ -167,7 +191,7 @@ export default function useQuizState(): QuizState & QuizActions {
         ...shuffle(wrongTfQs), ...shuffle(tfs),
       ]
     } else {
-      // 顺序模式：按 category 过滤 → 按 ID 升序 → 独立进度键
+      // 顺序模式：按 category 过滤 → 按 ID 升序 → 全量加载
       let all = await getAllQuestions(db)
 
       // 单套模式：先按 category 过滤
@@ -178,20 +202,52 @@ export default function useQuizState(): QuizState & QuizActions {
       // 按 ID 升序（全部模式下 ID 已按文件顺序分配）
       all.sort((a, b) => a.id - b.id)
 
-      // 读取该分类的独立进度
-      const progressKey = `sequential:${category}`
-      const savedProgress = await getProgress(db, progressKey)
-      resumeIndex = 0
-      if (savedProgress !== null) {
-        // 边界：如果上次已经刷完，回到开头
-        resumeIndex = savedProgress < all.length ? savedProgress : 0
+      // 全量加载
+      picked = all
+
+      // 读取 done 记录，确定续接位置
+      done = await getDoneRecord(db, category)
+      if (!done) {
+        // 旧数据迁移：检查旧的 number 进度
+        const progressKey = `sequential:${category}`
+        const oldProgress = await getProgress(db, progressKey)
+        if (oldProgress !== null && oldProgress > 0) {
+          // 将 1 到 oldProgress 的题标记为已完成（无作答记录）
+          const migrated: Record<number, { userAnswer: string; isCorrect: boolean }> = {}
+          for (const q of all.slice(0, oldProgress)) {
+            migrated[q.id] = { userAnswer: '', isCorrect: true }
+          }
+          await saveDoneRecord(db, category, migrated)
+          done = migrated
+        }
       }
-      picked = all.slice(resumeIndex, resumeIndex + 80)
+
+      // 查找第一个未完成题的 index
+      if (done) {
+        let firstUndone = all.length // 默认全部完成
+        for (let i = 0; i < all.length; i++) {
+          if (!done[all[i].id]) {
+            firstUndone = i
+            break
+          }
+        }
+        // 全部完成时停在最后一题（只读回顾）
+        resumeIndex = Math.min(firstUndone, all.length - 1)
+      }
     }
 
     setQuestions(picked)
-    setCurrentIndex(0)
-    setAnswers({})
+    setCurrentIndex(mode === 'sequential' ? resumeIndex : 0)
+    // 从 done 记录恢复 answers 状态（已完成题可回顾）
+    if (done) {
+      const restored: Record<number, { userAnswer: string; isUncertain: boolean; isSubmitted?: boolean }> = {}
+      for (const [qId, rec] of Object.entries(done)) {
+        restored[Number(qId)] = { userAnswer: rec.userAnswer, isUncertain: false, isSubmitted: true }
+      }
+      setAnswers(restored)
+    } else {
+      setAnswers({})
+    }
     setIsSubmitted(false)
     setStartIndex(mode === 'sequential' ? resumeIndex : 0)
     setHasShortage(shortage)
@@ -301,6 +357,12 @@ export default function useQuizState(): QuizState & QuizActions {
     [answers],
   )
 
+  /** 当前题是否已完成（顺序/错题本模式且已 submitOne） */
+  const isCurrentDone = useMemo(() => {
+    if (!currentQuestion) return false
+    return answers[currentQuestion.id]?.isSubmitted === true
+  }, [currentQuestion, answers])
+
   /** 判断多选答案是否匹配（排序后字母集相等） */
   function isMultiMatch(userAnswer: string, correctAnswer: string): boolean {
     const user = userAnswer.split(',').sort().join(',')
@@ -377,6 +439,61 @@ export default function useQuizState(): QuizState & QuizActions {
     return attempt
   }, [isSubmitted, questions, answers])
 
+  /** 逐题提交（顺序/错题本模式） */
+  const submitOne = useCallback(async (
+    db: IDBDatabase,
+    mode: 'sequential' | 'wrongbook',
+    category: string,
+    explicitAnswer?: string,
+  ): Promise<{ isCorrect: boolean; correctAnswer: string; explanation: string } | null> => {
+    const q = questions[currentIndex]
+    if (!q) return null
+
+    const rec = answers[q.id]
+    // 已提交过不可重复提交
+    if (rec?.isSubmitted) return null
+
+    const userAnswer = explicitAnswer ?? rec?.userAnswer ?? ''
+    let isCorrect = false
+
+    if (q.type === 'multi') {
+      isCorrect = isMultiMatch(userAnswer, q.answer ?? '')
+    } else {
+      isCorrect = userAnswer === (q.answer ?? '')
+    }
+
+    // 标记已提交
+    setAnswers((a) => ({
+      ...a,
+      [q.id]: { userAnswer, isUncertain: a[q.id]?.isUncertain ?? false, isSubmitted: true },
+    }))
+
+    // 写入 done 记录（顺序模式）
+    if (mode === 'sequential') {
+      const done = (await getDoneRecord(db, category)) ?? {}
+      done[q.id] = { userAnswer, isCorrect }
+      await saveDoneRecord(db, category, done)
+    }
+
+    // 答错写入错题池
+    if (!isCorrect) {
+      await upsertWrongAnswers(db, [{
+        questionId: q.id,
+        type: q.type,
+        category: q.category,
+      }])
+    } else if (mode === 'wrongbook') {
+      // 错题本答对：从错题池移除
+      await deleteWrongAnswer(db, q.id)
+    }
+
+    return {
+      isCorrect,
+      correctAnswer: q.answer ?? '',
+      explanation: q.explanation ?? '',
+    }
+  }, [questions, currentIndex, answers])
+
   return {
     // 状态
     questions,
@@ -397,7 +514,9 @@ export default function useQuizState(): QuizState & QuizActions {
     goPrev,
     goTo,
     submit,
+    submitOne,
     hasCurrentAnswer,
     isCurrentUncertain,
+    isCurrentDone,
   }
 }
