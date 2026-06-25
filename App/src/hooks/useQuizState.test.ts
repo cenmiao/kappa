@@ -1,8 +1,9 @@
-// useQuizState — category 过滤 + 配额弹性测试
+// useQuizState — category 过滤 + 配额弹性 + 顺序模式独立进度测试
 import { describe, it, expect, afterEach } from 'vitest'
 import { renderHook, act, waitFor } from '@testing-library/react'
 import type { Question } from '../types'
 import { openDB } from '../db'
+import { saveProgress } from '../db/progress'
 
 const DB_NAME = 'kappa-db'
 
@@ -223,6 +224,197 @@ describe('useQuizState — 配额弹性分配与 hasShortage', () => {
       })
 
       expect(result.current.hasShortage).toBe(false)
+    } finally {
+      db.close()
+    }
+  })
+})
+
+describe('useQuizState — 顺序模式按 category 过滤', () => {
+  it('category="综合管理" 时只出该分类的题，按 ID 升序', async () => {
+    const db = await openDB()
+    // 构造 2 个分类的题目，ID 交错
+    const questions: Question[] = [
+      makeQuestion({ id: 1, category: '综合管理', stem: '综合管理 第1题' }),
+      makeQuestion({ id: 2, category: '税务公共知识', stem: '税务 第1题' }),
+      makeQuestion({ id: 3, category: '综合管理', stem: '综合管理 第2题' }),
+      makeQuestion({ id: 4, category: '税务公共知识', stem: '税务 第2题' }),
+      makeQuestion({ id: 5, category: '综合管理', stem: '综合管理 第3题' }),
+    ]
+    await seedQuestions(db, questions)
+
+    try {
+      const useQuizState = await getUseQuizState()
+      const { result } = renderHook(() => useQuizState(), { wrapper: hookWrapper() })
+
+      await act(async () => {
+        await result.current.initQuiz(db, 'sequential', '综合管理')
+      })
+
+      await waitFor(() => {
+        expect(result.current.questions.length).toBeGreaterThan(0)
+      })
+
+      // 应只包含综合管理的题
+      expect(result.current.questions.every((q: Question) => q.category === '综合管理')).toBe(true)
+      // 应按 ID 升序
+      const ids = result.current.questions.map((q: Question) => q.id)
+      expect(ids).toEqual([1, 3, 5])
+    } finally {
+      db.close()
+    }
+  })
+
+  it('category="全部" 时出所有题，按 ID 升序', async () => {
+    const db = await openDB()
+    const questions: Question[] = [
+      makeQuestion({ id: 3, category: '政治理论', stem: '政治 第1题' }),
+      makeQuestion({ id: 1, category: '综合管理', stem: '综合 第1题' }),
+      makeQuestion({ id: 2, category: '税务公共知识', stem: '税务 第1题' }),
+    ]
+    await seedQuestions(db, questions)
+
+    try {
+      const useQuizState = await getUseQuizState()
+      const { result } = renderHook(() => useQuizState(), { wrapper: hookWrapper() })
+
+      await act(async () => {
+        await result.current.initQuiz(db, 'sequential', '全部')
+      })
+
+      await waitFor(() => {
+        expect(result.current.questions.length).toBe(3)
+      })
+
+      // 全部模式：按 ID 升序返回所有题
+      const ids = result.current.questions.map((q: Question) => q.id)
+      expect(ids).toEqual([1, 2, 3])
+    } finally {
+      db.close()
+    }
+  })
+})
+
+describe('useQuizState — 顺序模式独立进度', () => {
+  it('有已保存进度时从上次位置继续', async () => {
+    const db = await openDB()
+    const questions: Question[] = Array.from({ length: 30 }, (_, i) =>
+      makeQuestion({ id: i + 1, category: '综合管理', stem: `综合管理 第${i + 1}题` })
+    )
+    await seedQuestions(db, questions)
+    // 模拟已刷 10 题
+    await saveProgress(db, 10, 'sequential:综合管理')
+
+    try {
+      const useQuizState = await getUseQuizState()
+      const { result } = renderHook(() => useQuizState(), { wrapper: hookWrapper() })
+
+      await act(async () => {
+        await result.current.initQuiz(db, 'sequential', '综合管理')
+      })
+
+      await waitFor(() => {
+        expect(result.current.questions.length).toBeGreaterThan(0)
+      })
+
+      // 应从第 11 题开始（ID=11），取 80 题但只有 30 题所以实际取 20 题
+      expect(result.current.questions[0].id).toBe(11)
+      expect(result.current.startIndex).toBe(10)
+    } finally {
+      db.close()
+    }
+  })
+
+  it('不同 category 的进度相互独立', async () => {
+    const db = await openDB()
+    const qA: Question[] = Array.from({ length: 20 }, (_, i) =>
+      makeQuestion({ id: i + 1, category: '综合管理', stem: `综合管理 第${i + 1}题` })
+    )
+    const qB: Question[] = Array.from({ length: 20 }, (_, i) =>
+      makeQuestion({ id: i + 21, category: '税务公共知识', stem: `税务 第${i + 1}题` })
+    )
+    await seedQuestions(db, [...qA, ...qB])
+    await saveProgress(db, 5, 'sequential:综合管理')
+
+    try {
+      const useQuizState = await getUseQuizState()
+      const { result } = renderHook(() => useQuizState(), { wrapper: hookWrapper() })
+
+      // 先初始化综合管理：应从第 6 题开始（ID=6）
+      await act(async () => {
+        await result.current.initQuiz(db, 'sequential', '综合管理')
+      })
+      await waitFor(() => {
+        expect(result.current.questions.length).toBeGreaterThan(0)
+      })
+      expect(result.current.questions[0].id).toBe(6)
+
+      // 再切换到税务公共知识：应从第 1 题开始（ID=21）
+      await act(async () => {
+        await result.current.initQuiz(db, 'sequential', '税务公共知识')
+      })
+      await waitFor(() => {
+        expect(result.current.questions.length).toBeGreaterThan(0)
+      })
+      expect(result.current.questions[0].id).toBe(21)
+    } finally {
+      db.close()
+    }
+  })
+
+  it('进度超过题库总题数时回到开头', async () => {
+    const db = await openDB()
+    const questions: Question[] = Array.from({ length: 10 }, (_, i) =>
+      makeQuestion({ id: i + 1, category: '综合管理', stem: `综合管理 第${i + 1}题` })
+    )
+    await seedQuestions(db, questions)
+    // 进度=10 表示已刷完 10 题
+    await saveProgress(db, 10, 'sequential:综合管理')
+
+    try {
+      const useQuizState = await getUseQuizState()
+      const { result } = renderHook(() => useQuizState(), { wrapper: hookWrapper() })
+
+      await act(async () => {
+        await result.current.initQuiz(db, 'sequential', '综合管理')
+      })
+
+      await waitFor(() => {
+        expect(result.current.questions.length).toBeGreaterThan(0)
+      })
+
+      // 应回到开头
+      expect(result.current.questions[0].id).toBe(1)
+      expect(result.current.startIndex).toBe(0)
+    } finally {
+      db.close()
+    }
+  })
+
+  it('指定 category 进度不受默认 key 进度影响', async () => {
+    const db = await openDB()
+    const questions: Question[] = Array.from({ length: 30 }, (_, i) =>
+      makeQuestion({ id: i + 1, category: '综合管理', stem: `综合管理 第${i + 1}题` })
+    )
+    await seedQuestions(db, questions)
+    // 旧格式默认 key "sequential" 有进度 8；新格式 "sequential:综合管理" 有进度 3
+    await saveProgress(db, 8)                          // 默认 key
+    await saveProgress(db, 3, 'sequential:综合管理')  // category key
+
+    try {
+      const useQuizState = await getUseQuizState()
+      const { result } = renderHook(() => useQuizState(), { wrapper: hookWrapper() })
+
+      await act(async () => {
+        await result.current.initQuiz(db, 'sequential', '综合管理')
+      })
+
+      await waitFor(() => {
+        expect(result.current.questions.length).toBeGreaterThan(0)
+      })
+
+      // 应使用 category key 的进度 3（而非默认 key 的 8）
+      expect(result.current.questions[0].id).toBe(4) // ID=4 即第 4 题（index 3）
     } finally {
       db.close()
     }

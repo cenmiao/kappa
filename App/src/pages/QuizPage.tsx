@@ -44,11 +44,11 @@ export default function QuizPage() {
   // ─── beforeunload：答题中离开拦截 ────────────────
   useBeforeUnload(!quiz.isSubmitted && quiz.totalQuestions > 0)
 
-  // ─── 题号自动居中滚动 ──────────────────────────
+  // ─── 题号自动居中滚动（仅水平，禁止垂直滚动）────
   useEffect(() => {
     const btn = thumbRefs.current.get(quiz.currentIndex)
     if (btn) {
-      btn.scrollIntoView({ behavior: 'smooth', inline: 'center' })
+      btn.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' })
     }
   }, [quiz.currentIndex])
 
@@ -194,9 +194,10 @@ export default function QuizPage() {
         await upsertWrongAnswers(db, wrongItems)
       }
 
-      // 顺序模式：保存下次续接位置（当前题号 + 1）
+      // 顺序模式：保存下次续接位置（当前题号 + 1），带 category 后缀
       if (mode === 'sequential') {
-        await saveProgress(db, quiz.startIndex + quiz.currentIndex + 1)
+        const progressKey = `sequential:${category}`
+        await saveProgress(db, quiz.startIndex + quiz.currentIndex + 1, progressKey)
       }
     } catch {
       // 保存失败不阻塞交卷流程

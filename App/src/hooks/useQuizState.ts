@@ -167,13 +167,24 @@ export default function useQuizState(): QuizState & QuizActions {
         ...shuffle(wrongTfQs), ...shuffle(tfs),
       ]
     } else {
-      // 顺序模式：按 ID 升序，从上次进度继续
-      const all = await getAllQuestions(db)
+      // 顺序模式：按 category 过滤 → 按 ID 升序 → 独立进度键
+      let all = await getAllQuestions(db)
+
+      // 单套模式：先按 category 过滤
+      if (category !== '全部') {
+        all = all.filter(q => q.category === category)
+      }
+
+      // 按 ID 升序（全部模式下 ID 已按文件顺序分配）
       all.sort((a, b) => a.id - b.id)
-      const savedProgress = await getProgress(db)
+
+      // 读取该分类的独立进度
+      const progressKey = `sequential:${category}`
+      const savedProgress = await getProgress(db, progressKey)
       resumeIndex = 0
-      if (savedProgress !== null && savedProgress < all.length) {
-        resumeIndex = savedProgress
+      if (savedProgress !== null) {
+        // 边界：如果上次已经刷完，回到开头
+        resumeIndex = savedProgress < all.length ? savedProgress : 0
       }
       picked = all.slice(resumeIndex, resumeIndex + 80)
     }

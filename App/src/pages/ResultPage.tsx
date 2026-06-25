@@ -33,10 +33,10 @@ export default function ResultPage() {
       <div className="min-h-screen bg-white flex flex-col items-center justify-center px-5 text-center">
         <div className="text-5xl mb-4">📊</div>
         <h2 className="text-lg font-bold text-gray-800 mb-2">暂无成绩数据</h2>
-        <p className="text-sm text-gray-400 mb-6">请先完成一次答题后再查看成绩报告</p>
+        <p className="text-base text-gray-400 mb-6">请先完成一次答题后再查看成绩报告</p>
         <button
           onClick={() => nav('/')}
-          className="px-6 py-3 rounded-xl bg-indigo-500 text-white text-sm font-medium active:bg-indigo-600 transition-colors"
+          className="px-6 py-3 rounded-xl bg-indigo-500 text-white text-base font-medium active:bg-indigo-600 transition-colors"
         >
           返回首页
         </button>
@@ -87,20 +87,20 @@ export default function ResultPage() {
   return (
     <div className="min-h-screen bg-gray-50 pb-20">
       {/* ── 头部 — 总分大数字 ── */}
-      <div className="bg-gradient-to-b from-indigo-600 to-indigo-500 text-white px-5 pt-8 pb-8 text-center relative">
+      <div className="bg-gradient-to-b from-indigo-600 to-indigo-500 text-white px-5 pt-5 pb-5 text-center relative">
         <button
           onClick={() => nav('/')}
-          className="absolute top-3 left-4 text-xs font-medium text-indigo-300 hover:text-white transition-colors"
+          className="absolute top-3 left-4 text-sm font-medium text-indigo-300 hover:text-white transition-colors"
         >
           ← 首页
         </button>
-        <p className="text-sm text-indigo-200 mb-2">成绩报告</p>
-        <div className="text-6xl font-bold mb-2">{attempt.score}</div>
-        <div className="text-indigo-200 text-sm mb-4">满分 {attempt.total} 分</div>
+        <p className="text-sm text-indigo-200 mb-1">成绩报告</p>
+        <div className="text-5xl font-bold mb-1">{attempt.score}</div>
+        <div className="text-indigo-200 text-sm mb-3">满分 {attempt.total} 分</div>
 
         {/* 正确率进度条 */}
         <div className="max-w-xs mx-auto">
-          <div className="flex justify-between text-xs text-indigo-200 mb-1">
+          <div className="flex justify-between text-sm text-indigo-200 mb-1">
             <span>正确率</span>
             <span>{Math.round(attempt.accuracy * 100)}%</span>
           </div>
@@ -141,9 +141,10 @@ export default function ResultPage() {
 
       {/* ── 答题卡网格 ── */}
       <div className="px-5 mt-4">
-        <h3 className="text-sm font-semibold text-gray-700 mb-3">答题卡</h3>
+        <h3 className="text-base font-semibold text-gray-700 mb-3">答题卡</h3>
         <div className="bg-white rounded-2xl shadow-sm p-4">
-          <div className="grid grid-cols-8 gap-1.5">
+          {/* 可滚动网格：只露约一半行数，其余下滚查看 */}
+          <div className="grid grid-cols-8 gap-1.5 max-h-[220px] overflow-y-auto">
             {results.map((r) => {
               let bg = 'bg-green-500 text-white'
               if (r.userAnswer === '') {
@@ -160,7 +161,7 @@ export default function ResultPage() {
                   onClick={() =>
                     setExpandedIndex(expandedIndex === r.index ? null : r.index)
                   }
-                  className={`w-9 h-9 rounded-lg text-[11px] font-bold flex items-center justify-center transition-all ${bg} ${
+                  className={`w-9 h-9 rounded-lg text-xs font-bold flex items-center justify-center transition-all ${bg} ${
                     expandedIndex === r.index ? 'ring-2 ring-indigo-400 ring-offset-1' : ''
                   }`}
                 >
@@ -171,7 +172,7 @@ export default function ResultPage() {
           </div>
 
           {/* 图例 */}
-          <div className="flex gap-4 mt-3 text-[10px] text-gray-400">
+          <div className="flex gap-4 mt-3 text-xs text-gray-400">
             <span className="flex items-center gap-1">
               <span className="w-3 h-3 rounded bg-green-500 inline-block" />
               正确
@@ -200,9 +201,9 @@ export default function ResultPage() {
             <div className="mt-3 bg-white rounded-2xl shadow-sm p-5 border border-gray-100">
               {/* 题号 + 题型标签 */}
               <div className="flex items-center gap-2 mb-2">
-                <span className="text-xs text-gray-400">#{r.index + 1}</span>
+                <span className="text-sm text-gray-400">#{r.index + 1}</span>
                 <span
-                  className={`text-xs px-2 py-0.5 rounded-full ${
+                  className={`text-sm px-2 py-0.5 rounded-full ${
                     r.type === 'single'
                       ? 'bg-blue-100 text-blue-700'
                       : r.type === 'multi'
@@ -215,10 +216,10 @@ export default function ResultPage() {
               </div>
 
               {/* 题干 */}
-              <p className="text-sm text-gray-800 mb-3 leading-relaxed">{r.stem}</p>
+              <p className="text-base text-gray-800 mb-3 leading-relaxed">{r.stem}</p>
 
               {/* 选项及状态 */}
-              <div className="text-xs space-y-1.5">
+              <div className="text-base space-y-2">
                 {r.options.map((opt, i) => {
                   const letter = optionLabels[i]
                   const isCorrectOpt = r.correctAnswer.includes(letter)
@@ -244,7 +245,7 @@ export default function ResultPage() {
                     <p key={letter} className={cls}>
                       {letter}. {text}
                       {marker && (
-                        <span className="ml-2 text-[10px]">{marker}</span>
+                        <span className="ml-2 text-sm">{marker}</span>
                       )}
                     </p>
                   )
@@ -253,7 +254,7 @@ export default function ResultPage() {
 
               {/* 答案对比 + 解析 */}
               <div className="mt-3 pt-3 border-t border-gray-100">
-                <p className="text-xs text-gray-500">
+                <p className="text-base text-gray-500">
                   <span className="font-medium">你的答案：</span>
                   <span className={r.isCorrect ? 'text-green-600' : 'text-red-600'}>
                     {r.userAnswer || '(未作答)'}
@@ -263,7 +264,7 @@ export default function ResultPage() {
                   )}
                 </p>
                 {r.explanation && (
-                  <p className="text-xs text-gray-500 mt-1.5 leading-relaxed">
+                  <p className="text-base text-gray-500 mt-1.5 leading-relaxed">
                     {r.explanation}
                   </p>
                 )}
@@ -272,7 +273,7 @@ export default function ResultPage() {
               {/* 关闭按钮 */}
               <button
                 onClick={() => setExpandedIndex(null)}
-                className="mt-4 w-full py-2 rounded-lg border border-gray-200 text-xs text-gray-400 active:bg-gray-50 transition-colors"
+                className="mt-4 w-full py-2 rounded-lg border border-gray-200 text-base text-gray-400 active:bg-gray-50 transition-colors"
               >
                 收起
               </button>
@@ -286,8 +287,8 @@ export default function ResultPage() {
         {reviewList.length === 0 ? (
           <div className="bg-white rounded-2xl shadow-sm p-6 text-center">
             <div className="text-4xl mb-3">🎉</div>
-            <p className="text-sm font-medium text-gray-800 mb-1">全部掌握！</p>
-            <p className="text-xs text-gray-400">没有需要复习的题目</p>
+            <p className="text-base font-medium text-gray-800 mb-1">全部掌握！</p>
+            <p className="text-sm text-gray-400">没有需要复习的题目</p>
           </div>
         ) : (
           <>
@@ -298,12 +299,12 @@ export default function ResultPage() {
                 const reviewQs = questions.filter(q => reviewIds.has(q.id))
                 nav('/quiz', { state: { reviewQuestions: reviewQs } })
               }}
-              className="w-full py-3 rounded-xl bg-gradient-to-r from-amber-400 to-orange-400 text-white text-sm font-medium active:from-amber-500 active:to-orange-500 transition-colors mb-3"
+              className="w-full py-3 rounded-xl bg-gradient-to-r from-amber-400 to-orange-400 text-white text-base font-medium active:from-amber-500 active:to-orange-500 transition-colors mb-3"
             >
               📌 针对这 {reviewList.length} 题重新练习
             </button>
 
-            <h3 className="text-sm font-semibold text-gray-700 mb-3">
+            <h3 className="text-base font-semibold text-gray-700 mb-3">
               📌 需复习 ({reviewList.length} 题)
             </h3>
             <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
@@ -315,7 +316,7 @@ export default function ResultPage() {
                   }`}
                 >
                   <span
-                    className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0 ${
+                    className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${
                       !r.isCorrect
                         ? 'bg-red-100 text-red-600'
                         : 'bg-amber-100 text-amber-600'
@@ -323,10 +324,10 @@ export default function ResultPage() {
                   >
                     {!r.isCorrect ? '✗' : '⚑'}
                   </span>
-                  <span className="text-xs text-gray-700 truncate flex-1">
+                  <span className="text-sm text-gray-700 truncate flex-1">
                     {r.stem}
                   </span>
-                  <span className="text-[10px] text-gray-400 flex-shrink-0">
+                  <span className="text-xs text-gray-400 flex-shrink-0">
                     {r.userAnswer || '?'}→{r.correctAnswer}
                   </span>
                 </div>
@@ -340,13 +341,13 @@ export default function ResultPage() {
       <div className="px-5 mt-6 mb-10 flex gap-3">
         <button
           onClick={() => nav('/')}
-          className="flex-1 py-3 rounded-xl border border-gray-200 text-sm text-gray-600 bg-white active:bg-gray-50 transition-colors"
+          className="flex-1 py-3 rounded-xl border border-gray-200 text-base text-gray-600 bg-white active:bg-gray-50 transition-colors"
         >
           返回首页
         </button>
         <button
           onClick={() => nav('/quiz')}
-          className="flex-1 py-3 rounded-xl bg-indigo-500 text-white text-sm font-medium active:bg-indigo-600 transition-colors"
+          className="flex-1 py-3 rounded-xl bg-indigo-500 text-white text-base font-medium active:bg-indigo-600 transition-colors"
         >
           重新练习
         </button>
