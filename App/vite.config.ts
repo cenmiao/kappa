@@ -12,8 +12,8 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg', 'questions.json'],
       manifest: {
-        name: '我想静静的刷题',
-        short_name: '静刷',
+        name: "'两测'刷题",
+        short_name: '两测',
         description: '安全知识离线刷题应用',
         theme_color: '#6366f1',
         background_color: '#ffffff',

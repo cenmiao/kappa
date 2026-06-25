@@ -22,6 +22,7 @@ function makeAttempt(overrides: Partial<Attempt> = {}): Attempt {
     id: crypto.randomUUID(),
     date: new Date().toISOString(),
     mode: 'random',
+    category: '综合管理',
     score: 80,
     total: 100,
     accuracy: 0.8,

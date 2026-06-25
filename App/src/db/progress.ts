@@ -29,10 +29,10 @@ export async function getProgress(db: IDBDatabase): Promise<number | null> {
   })
 }
 
-/** 保存题库元信息（导入时间 + 题目总数） */
+/** 保存题库元信息（导入时间 + 题目总数 + 可选分类统计） */
 export async function saveMeta(
   db: IDBDatabase,
-  meta: { importTime: string; questionCount: number },
+  meta: { importTime: string; questionCount: number; categories?: Record<string, number> },
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     const tx = db.transaction('progress', 'readwrite')
@@ -44,14 +44,22 @@ export async function saveMeta(
 }
 
 /** 读取题库元信息，无记录时返回 null */
-export async function getMeta(db: IDBDatabase): Promise<{ importTime: string; questionCount: number } | null> {
+export async function getMeta(db: IDBDatabase): Promise<{ importTime: string; questionCount: number; categories?: Record<string, number> } | null> {
   return new Promise((resolve, reject) => {
     const tx = db.transaction('progress', 'readonly')
     const store = tx.objectStore('progress')
     const req = store.get(META_KEY)
     req.onsuccess = () => {
       const result = req.result as Meta | undefined
-      resolve(result ? { importTime: result.importTime, questionCount: result.questionCount } : null)
+      if (result) {
+        resolve({
+          importTime: result.importTime,
+          questionCount: result.questionCount,
+          categories: result.categories,
+        })
+      } else {
+        resolve(null)
+      }
     }
     req.onerror = () => reject(req.error)
   })

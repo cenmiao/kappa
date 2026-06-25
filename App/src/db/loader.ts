@@ -36,9 +36,14 @@ export async function loadQuestions(): Promise<void> {
       }
       const questions = await response.json()
       const { count } = await seedQuestions(db, questions)
-      // 写入 meta（导入时间 + 题目总数）
+      // 写入 meta（导入时间 + 题目总数 + 分类统计）
       if (count > 0) {
-        await saveMeta(db, { importTime: new Date().toISOString(), questionCount: count })
+        const categories: Record<string, number> = {}
+        for (const q of questions) {
+          const cat = q.category || '未知'
+          categories[cat] = (categories[cat] || 0) + 1
+        }
+        await saveMeta(db, { importTime: new Date().toISOString(), questionCount: count, categories })
       }
       state = { status: 'ready' }
     } catch (err) {

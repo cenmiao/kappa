@@ -13,7 +13,7 @@ export default function HomePage() {
   // 管理员面板
   const [showAdmin, setShowAdmin] = useState(false)
   const [showResetConfirm, setShowResetConfirm] = useState(false)
-  const [meta, setMeta] = useState<{ questionCount: number; importTime: string } | null>(null)
+  const [meta, setMeta] = useState<{ questionCount: number; importTime: string; categories?: Record<string, number> } | null>(null)
   const [resetMsg, setResetMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
   // 监听 PWA 安装事件
@@ -103,7 +103,7 @@ export default function HomePage() {
 
       {/* 头部 */}
       <div className="text-center mb-10">
-        <h1 className="text-3xl font-bold text-gray-900 mb-2">我想静静的刷题</h1>
+        <h1 className="text-3xl font-bold text-gray-900 mb-2">'两测'刷题</h1>
         <p className="text-gray-500 text-sm">离线刷题 · 安全知识练习</p>
       </div>
 
@@ -172,6 +172,33 @@ export default function HomePage() {
                 <span className="text-gray-400">题目总数</span>
                 <span className="text-gray-700 font-medium">{meta ? `${meta.questionCount} 道` : '加载中...'}</span>
               </div>
+              {/* 分类统计 */}
+              {meta?.categories && (
+                (() => {
+                  // 固定顺序排列，未知分类追加到末尾
+                  const ORDER = ['综合管理', '税务公共知识', '政治理论', '强基培训']
+                  const cats = Object.keys(meta.categories).sort(
+                    (a, b) => {
+                      const ai = ORDER.indexOf(a)
+                      const bi = ORDER.indexOf(b)
+                      if (ai === -1 && bi === -1) return a.localeCompare(b, 'zh-CN')
+                      if (ai === -1) return 1
+                      if (bi === -1) return -1
+                      return ai - bi
+                    }
+                  )
+                  return (
+                    <div className="border-t border-gray-100 pt-2 mt-2 space-y-1">
+                      {cats.map(cat => (
+                        <div key={cat} className="flex justify-between">
+                          <span className="text-gray-400">{cat}</span>
+                          <span className="text-gray-600">{meta.categories![cat]} 道</span>
+                        </div>
+                      ))}
+                    </div>
+                  )
+                })()
+              )}
               <div className="flex justify-between">
                 <span className="text-gray-400">导入时间</span>
                 <span className="text-gray-700 font-medium">
@@ -219,11 +246,10 @@ export default function HomePage() {
       >
         <div className="text-xs text-gray-500 space-y-0.5 mt-1">
           <p className="font-medium text-gray-600 mb-1">前置规则提醒：</p>
-          <p>1. 题库源文件需同时准备有答案版与无答案版两个 docx</p>
-          <p>2. 使用转换脚本合并两套文件</p>
-          <p>3. 先干跑生成格式异常报告，确认无误后再正式输出</p>
-          <p>4. 两套文件的编号和内容必须一一对应</p>
-          <p>5. 生成的新 questions.json 需部署到 GitHub Pages 后，再执行本重置</p>
+          <p>1. 将各分类题库 .docx 文件放入 tiku/ 目录（文件名前缀 1/2/3/4 决定顺序）</p>
+          <p>2. 运行 node scripts/convert.js 合并所有文件并输出 questions.json</p>
+          <p>3. 确认输出的 JSON 中各分类题目数和 ID 分配正确</p>
+          <p>4. 将生成的 questions.json 部署到 GitHub Pages 后，再执行本重置</p>
         </div>
       </ConfirmModal>
     </div>

@@ -67,9 +67,9 @@ describe('seedQuestions 写入 meta', () => {
     const { seedQuestions } = await import('./questions')
 
     const questions = [
-      { id: 1, type: 'single' as const, stem: '题1', options: ['A', 'B'], answer: 'A', explanation: '' },
-      { id: 2, type: 'multi' as const, stem: '题2', options: ['A', 'B', 'C'], answer: 'A,B', explanation: '' },
-      { id: 3, type: 'tf' as const, stem: '题3', options: ['A.正确', 'B.错误'], answer: 'A', explanation: '' },
+      { id: 1, type: 'single' as const, category: '综合管理', stem: '题1', options: ['A', 'B'], answer: 'A', explanation: '' },
+      { id: 2, type: 'multi' as const, category: '综合管理', stem: '题2', options: ['A', 'B', 'C'], answer: 'A,B', explanation: '' },
+      { id: 3, type: 'tf' as const, category: '综合管理', stem: '题3', options: ['A.正确', 'B.错误'], answer: 'A', explanation: '' },
     ]
 
     // 模拟 loadQuestions 的行为：seed → saveMeta
@@ -100,8 +100,8 @@ describe('seedQuestions 写入 meta', () => {
 
     const { seedQuestions } = await import('./questions')
 
-    const first = [{ id: 1, type: 'single' as const, stem: '题1', options: ['A', 'B'], answer: 'A', explanation: '' }]
-    const second = [{ id: 999, type: 'tf' as const, stem: '新题', options: ['A', 'B'], answer: 'B', explanation: '' }]
+    const first = [{ id: 1, type: 'single' as const, category: '综合管理', stem: '题1', options: ['A', 'B'], answer: 'A', explanation: '' }]
+    const second = [{ id: 999, type: 'tf' as const, category: '综合管理', stem: '新题', options: ['A', 'B'], answer: 'B', explanation: '' }]
 
     const r1 = await seedQuestions(db, first)
     expect(r1.seeded).toBe(true)
@@ -135,14 +135,14 @@ describe('resetQuestionBank', () => {
 
     // 预先写入数据
     await seedQuestions(db, [
-      { id: 1, type: 'single' as const, stem: '题1', options: ['A', 'B'], answer: 'A', explanation: '' },
+      { id: 1, type: 'single' as const, category: '综合管理', stem: '题1', options: ['A', 'B'], answer: 'A', explanation: '' },
     ])
 
     // 写入 attempts
     await new Promise<void>((resolve, reject) => {
       const tx = db.transaction('attempts', 'readwrite')
       const store = tx.objectStore('attempts')
-      store.put({ id: 'attempt-1', date: new Date().toISOString(), mode: 'random', score: 50, total: 100 })
+      store.put({ id: 'attempt-1', date: new Date().toISOString(), mode: 'random', category: '综合管理', score: 50, total: 100 })
       tx.oncomplete = () => resolve()
       tx.onerror = () => reject(tx.error)
     })
@@ -151,7 +151,7 @@ describe('resetQuestionBank', () => {
     await new Promise<void>((resolve, reject) => {
       const tx = db.transaction('wrongAnswers', 'readwrite')
       const store = tx.objectStore('wrongAnswers')
-      store.put({ questionId: 1, type: 'single', wrongCount: 2 })
+      store.put({ questionId: 1, type: 'single', category: '综合管理', wrongCount: 2 })
       tx.oncomplete = () => resolve()
       tx.onerror = () => reject(tx.error)
     })
