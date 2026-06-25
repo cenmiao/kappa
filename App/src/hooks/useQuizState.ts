@@ -9,7 +9,7 @@ import { getProgress, getDoneRecord, saveDoneRecord } from '../db/progress'
 export interface QuizState {
   questions: Question[]
   currentIndex: number
-  answers: Record<number, { userAnswer: string; isUncertain: boolean }>
+  answers: Record<number, { userAnswer: string; isUncertain: boolean; isSubmitted?: boolean }>
   isSubmitted: boolean
   currentAnswer: string
   totalQuestions: number
@@ -37,7 +37,7 @@ interface QuizActions {
   /** 交卷：计算得分、生成 AnswerRecord[] 和 Attempt 对象（仅随机模式） */
   submit: () => Attempt | null
   /** 逐题提交（顺序/错题本模式）：判对错、保存 done 记录、写入错题池 */
-  submitOne: (db: IDBDatabase, mode: 'sequential' | 'wrongbook', category: string) => Promise<{
+  submitOne: (db: IDBDatabase, mode: 'sequential' | 'wrongbook', category: string, explicitAnswer?: string) => Promise<{
     isCorrect: boolean
     correctAnswer: string
     explanation: string

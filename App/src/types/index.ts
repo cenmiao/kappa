@@ -50,7 +50,7 @@ export interface DoneRecord {
 export interface Attempt {
   id: string
   date: string
-  mode: 'random' | 'sequential' | 'review'
+  mode: 'random' | 'sequential' | 'review' | 'wrongbook'
   category: string
   score: number
   total: number
