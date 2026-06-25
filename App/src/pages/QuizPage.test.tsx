@@ -46,6 +46,7 @@ function mockQuizState(overrides: Record<string, unknown> = {}) {
     submit: vi.fn(),
     hasCurrentAnswer: false,
     isCurrentUncertain: false,
+    hasShortage: false,
     ...overrides,
   }
 }
@@ -116,6 +117,30 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup()
+})
+
+// ─── Slice 3: 分类标签可见 ───────────────────────────
+
+describe('QuizPage — 分类标签', () => {
+  it('答题页面显示当前题目的分类标签', async () => {
+    currentMockState = mockQuizState({
+      questions: [createMockQuestion({ category: '综合管理' })],
+    })
+    renderPage()
+
+    await screen.findByText('这是一道测试题目？')
+    expect(screen.getByText('综合管理')).toBeInTheDocument()
+  })
+
+  it('不同分类显示对应标签文本', async () => {
+    currentMockState = mockQuizState({
+      questions: [createMockQuestion({ category: '政治理论' })],
+    })
+    renderPage()
+
+    await screen.findByText('这是一道测试题目？')
+    expect(screen.getByText('政治理论')).toBeInTheDocument()
+  })
 })
 
 // ─── 优化 1: 不确定标记按钮 ────────────────────────────────
@@ -324,5 +349,37 @@ describe('QuizPage — 缺 category 参数重定向', () => {
     // 不应触发重定向
     await screen.findByText('这是一道测试题目？')
     expect(mockNav).not.toHaveBeenCalledWith('/', expect.anything())
+  })
+})
+
+// ─── Slice 3: 题量不足提示条 ──────────────────────────
+
+describe('QuizPage — 题量不足提示条', () => {
+  it('hasShortage 为 true 时显示题量不足提示', async () => {
+    currentMockState = mockQuizState({ hasShortage: true })
+    renderPage()
+
+    await screen.findByText('这是一道测试题目？')
+    expect(screen.getByText(/当前题库题量不足/)).toBeInTheDocument()
+    expect(screen.getByText(/部分题目可能重复出现/)).toBeInTheDocument()
+  })
+
+  it('hasShortage 为 false 时不显示题量不足提示', async () => {
+    currentMockState = mockQuizState({ hasShortage: false })
+    renderPage()
+
+    await screen.findByText('这是一道测试题目？')
+    expect(screen.queryByText(/当前题库题量不足/)).not.toBeInTheDocument()
+  })
+
+  it('loading 态不显示题量不足提示', async () => {
+    mockLoadState = 'loading'
+    mockIsReady = false
+    currentMockState = mockQuizState({ hasShortage: true, isSubmitted: true, totalQuestions: 0 })
+
+    renderPage()
+
+    await screen.findByText('题库加载中...')
+    expect(screen.queryByText(/当前题库题量不足/)).not.toBeInTheDocument()
   })
 })

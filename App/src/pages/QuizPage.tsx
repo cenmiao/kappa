@@ -37,6 +37,7 @@ export default function QuizPage() {
   const [showConfirm, setShowConfirm] = useState(false)
   const [showBackConfirm, setShowBackConfirm] = useState(false)
   const thumbRefs = useRef<Map<number, HTMLButtonElement>>(new Map())
+  const contentRef = useRef<HTMLDivElement>(null)
 
   const quiz = useQuizState()
 
@@ -48,6 +49,13 @@ export default function QuizPage() {
     const btn = thumbRefs.current.get(quiz.currentIndex)
     if (btn) {
       btn.scrollIntoView({ behavior: 'smooth', inline: 'center' })
+    }
+  }, [quiz.currentIndex])
+
+  // ─── 切题时题目内容区回到顶部 ──────────────────
+  useEffect(() => {
+    if (contentRef.current) {
+      contentRef.current.scrollTop = 0
     }
   }, [quiz.currentIndex])
 
@@ -121,8 +129,9 @@ export default function QuizPage() {
       return
     }
 
+    const category = searchParams.get('category') ?? '全部'
     openDB()
-      .then((db) => quiz.initQuiz(db, mode))
+      .then((db) => quiz.initQuiz(db, mode, category))
       .then(() => {
         if (!cancelled) setQuizReady(true)
       })
@@ -159,20 +168,28 @@ export default function QuizPage() {
 
     // 补全 mode 信息（复习模式优先）
     const actualMode: Attempt['mode'] = isReviewMode ? 'review' : mode
-    const finalAttempt = { ...attempt, mode: actualMode }
+    // category：复习模式从题目列表第一道题 fallback，否则从 URL 获取
+    const category = isReviewMode
+      ? (quiz.questions[0]?.category ?? '全部')
+      : (searchParams.get('category') ?? '全部')
+    const finalAttempt = { ...attempt, mode: actualMode, category }
 
     // 持久化到 IndexedDB
     try {
       const db = await openDB()
       await saveAttempt(db, finalAttempt)
 
-      // 错题录入错题池
+      // 错题录入错题池（每道错题从题目对象获取 category）
       const wrongItems = finalAttempt.answers
         .filter(a => !a.isCorrect)
-        .map(a => ({
-          questionId: a.questionId,
-          type: quiz.questions.find(q => q.id === a.questionId)!.type,
-        }))
+        .map(a => {
+          const q = quiz.questions.find(q => q.id === a.questionId)!
+          return {
+            questionId: a.questionId,
+            type: q.type,
+            category: q.category,
+          }
+        })
       if (wrongItems.length > 0) {
         await upsertWrongAnswers(db, wrongItems)
       }
@@ -307,6 +324,10 @@ export default function QuizPage() {
             第 {quiz.currentIndex + 1}/{quiz.totalQuestions} 题
           </span>
           <div className="flex items-center gap-3">
+            {/* 分类标签 */}
+            <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-green-50 text-green-600">
+              {q.category}
+            </span>
             {/* 题型标签 */}
             <span
               className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${typeBadge.bg} ${typeBadge.text}`}
@@ -317,8 +338,16 @@ export default function QuizPage() {
         </div>
       </div>
 
+      {/* ── 题量不足提示条 ── */}
+      {quiz.hasShortage && (
+        <div className="mx-4 px-4 py-2 bg-amber-50 border border-amber-200 rounded-lg flex items-center gap-2">
+          <span className="text-amber-600 text-sm">⚠</span>
+          <span className="text-amber-700 text-xs font-medium">当前题库题量不足，部分题目可能重复出现</span>
+        </div>
+      )}
+
       {/* ── 题目内容区 ── */}
-      <div className="flex-1 flex flex-col px-5 pt-6 overflow-y-auto">
+      <div ref={contentRef} className="flex-1 flex flex-col px-5 pt-6 overflow-y-auto">
         {/* 题干 */}
         <div className="mb-5">
           <p className="text-lg leading-relaxed text-gray-900 font-medium">{q.stem}</p>
