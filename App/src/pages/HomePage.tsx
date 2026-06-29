@@ -6,12 +6,12 @@ import { resetQuestionBank, loadQuestions } from '../db/loader'
 import { getAllWrongAnswers } from '../db/wrongAnswers'
 import ConfirmModal from '../components/ConfirmModal'
 
-const CATEGORIES = ['全部', '综合管理', '税务公共知识', '政治理论', '强基培训'] as const
+const CATEGORIES = ['全部', '综合管理', '税务公共知识', '政治理论', '强基培训', '领导胜任力', '纳税服务', '税务稽查', '信息技术', '征收管理'] as const
 
 export default function HomePage() {
   const nav = useNavigate()
   const location = useLocation()
-  const [showPwaBanner, setShowPwaBanner] = useState(true)
+  const [showPwaBanner, setShowPwaBanner] = useState(false)
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null)
 
   // 题库分类选择 — 从 localStorage 恢复上次选择
@@ -274,7 +274,7 @@ export default function HomePage() {
               {meta?.categories && (
                 (() => {
                   // 固定顺序排列，未知分类追加到末尾
-                  const ORDER = ['综合管理', '税务公共知识', '政治理论', '强基培训']
+                  const ORDER = ['综合管理', '税务公共知识', '政治理论', '强基培训', '领导胜任力', '纳税服务', '税务稽查', '信息技术', '征收管理']
                   const cats = Object.keys(meta.categories).sort(
                     (a, b) => {
                       const ai = ORDER.indexOf(a)
@@ -344,7 +344,7 @@ export default function HomePage() {
       >
         <div className="text-xs text-gray-500 space-y-0.5 mt-1">
           <p className="font-medium text-gray-600 mb-1">前置规则提醒：</p>
-          <p>1. 将各分类题库 .docx 文件放入 tiku/ 目录（文件名前缀 1/2/3/4 决定顺序）</p>
+          <p>1. 将各分类题库 .docx 文件放入 tiku/ 目录（文件名前缀 1-9 决定顺序）</p>
           <p>2. 运行 node scripts/convert.js 合并所有文件并输出 questions.json</p>
           <p>3. 确认输出的 JSON 中各分类题目数和 ID 分配正确</p>
           <p>4. 将生成的 questions.json 部署到 GitHub Pages 后，再执行本重置</p>

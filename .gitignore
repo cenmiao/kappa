@@ -30,3 +30,7 @@ __pycache__/
 
 # Pandoc temp
 tiku/*.txt
+.codegraph
+.claude
+.agents
+package-lock.json
