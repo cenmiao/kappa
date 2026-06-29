@@ -30,21 +30,33 @@ export async function loadQuestions(): Promise<void> {
   const promise = (async () => {
     try {
       const db = await openDB()
-      const response = await fetch(`${import.meta.env.BASE_URL}questions.json`, { cache: 'no-cache' })
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`)
-      }
-      const questions = await response.json()
-      const { count } = await seedQuestions(db, questions)
-      // 写入 meta（导入时间 + 题目总数 + 分类统计）
-      if (count > 0) {
-        const categories: Record<string, number> = {}
-        for (const q of questions) {
-          const cat = q.category || '未知'
-          categories[cat] = (categories[cat] || 0) + 1
+
+      // 先检查 IndexedDB 是否已有数据，避免重复下载 3.5MB JSON
+      const hasData = await new Promise<boolean>((resolve, reject) => {
+        const tx = db.transaction('questions', 'readonly')
+        const req = tx.objectStore('questions').count()
+        req.onsuccess = () => resolve(req.result > 0)
+        req.onerror = () => reject(req.error)
+      })
+
+      if (!hasData) {
+        const response = await fetch(`${import.meta.env.BASE_URL}questions.json`, { cache: 'no-cache' })
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`)
         }
-        await saveMeta(db, { importTime: new Date().toISOString(), questionCount: count, categories })
+        const questions = await response.json()
+        const { count } = await seedQuestions(db, questions)
+        // 写入 meta（导入时间 + 题目总数 + 分类统计）
+        if (count > 0) {
+          const categories: Record<string, number> = {}
+          for (const q of questions) {
+            const cat = q.category || '未知'
+            categories[cat] = (categories[cat] || 0) + 1
+          }
+          await saveMeta(db, { importTime: new Date().toISOString(), questionCount: count, categories })
+        }
       }
+
       state = { status: 'ready' }
     } catch (err) {
       state = { status: 'error', message: err instanceof Error ? err.message : String(err) }
