@@ -30,7 +30,7 @@ export async function loadQuestions(): Promise<void> {
   const promise = (async () => {
     try {
       const db = await openDB()
-      const response = await fetch(`${import.meta.env.BASE_URL}questions.json`)
+      const response = await fetch(`${import.meta.env.BASE_URL}questions.json`, { cache: 'no-cache' })
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`)
       }
@@ -57,22 +57,22 @@ export async function loadQuestions(): Promise<void> {
 
 /** 重置题库：清空 questions + wrongAnswers，重置加载状态。保留 attempts + progress。调用后需手动 loadQuestions() */
 export async function resetQuestionBank(db: IDBDatabase): Promise<void> {
-  // 清空 questions 表
+  // 清空 questions 表（等待事务提交完成）
   await new Promise<void>((resolve, reject) => {
     const tx = db.transaction('questions', 'readwrite')
     const store = tx.objectStore('questions')
-    const req = store.clear()
-    req.onsuccess = () => resolve()
-    req.onerror = () => reject(req.error)
+    store.clear()
+    tx.oncomplete = () => resolve()
+    tx.onerror = () => reject(tx.error)
   })
 
-  // 清空 wrongAnswers 表
+  // 清空 wrongAnswers 表（等待事务提交完成）
   await new Promise<void>((resolve, reject) => {
     const tx = db.transaction('wrongAnswers', 'readwrite')
     const store = tx.objectStore('wrongAnswers')
-    const req = store.clear()
-    req.onsuccess = () => resolve()
-    req.onerror = () => reject(req.error)
+    store.clear()
+    tx.oncomplete = () => resolve()
+    tx.onerror = () => reject(tx.error)
   })
 
   // 重置加载状态，让使用者可以重新 loadQuestions()

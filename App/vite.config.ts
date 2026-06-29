@@ -10,7 +10,19 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.svg', 'questions.json'],
+      includeAssets: ['favicon.svg'],
+      workbox: {
+        runtimeCaching: [
+          {
+            urlPattern: /\/kappa\/questions\.json$/,
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'questions-cache',
+              expiration: { maxEntries: 1, maxAgeSeconds: 60 * 60 * 24 },
+            },
+          },
+        ],
+      },
       manifest: {
         name: "'两测'刷题",
         short_name: '两测',

@@ -141,7 +141,7 @@ describe('题库分类选择器', () => {
     })
   })
 
-  it('渲染下拉框并显示 5 个分类选项，默认选中"全部"', () => {
+  it('渲染下拉框并显示 10 个分类选项，默认选中"全部"', () => {
     render(
       <MemoryRouter>
         <HomePage />
@@ -152,9 +152,9 @@ describe('题库分类选择器', () => {
     const select = screen.getByRole('combobox', { name: '题库分类选择' })
     expect(select).toBeTruthy()
 
-    // 验证 5 个选项
+    // 验证 10 个选项（"全部" + 9 分类）
     const options = screen.getAllByRole('option') as HTMLOptionElement[]
-    expect(options).toHaveLength(5)
+    expect(options).toHaveLength(10)
     CATEGORY_OPTIONS.forEach((cat, i) => {
       expect(options[i].textContent).toBe(cat)
     })

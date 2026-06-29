@@ -7,36 +7,20 @@ import { fileURLToPath } from 'node:url'
 
 const thisDir = dirname(fileURLToPath(import.meta.url))
 const configPath = resolve(thisDir, '..', 'vite.config.ts')
-const distSwPath = resolve(thisDir, '..', 'dist', 'sw.js')
 
 function readViteConfig(): string {
   return readFileSync(configPath, 'utf-8')
 }
 
 describe('PWA 配置', () => {
-  it('includeAssets 应包含 questions.json', () => {
+  it('questions.json 应使用 NetworkFirst 运行时缓存（不在预缓存中）', () => {
     const config = readViteConfig()
 
-    // 验证 includeAssets 数组中包含 'questions.json'
-    // 使用 [\s\S] 容忍任意空白/换行/注释，防止格式化后误报
-    expect(config).toMatch(/includeAssets[\s\S]*?questions\.json/)
-  })
-})
-
-describe('SW 预缓存产物', () => {
-  it('build 后 sw.js 的 precache 列表应包含 questions.json', () => {
-    // 需要先执行 npm run build，测试验证产物
-    if (!existsSync(distSwPath)) {
-      throw new Error(
-        `dist/sw.js 不存在，请先运行 npm run build（路径：${distSwPath}）`
-      )
-    }
-
-    const swContent = readFileSync(distSwPath, 'utf-8')
-
-    // precacheAndRoute 调用中应出现 questions.json
-    // workbox 生成的 key 可能带引号或裸名：url:"questions.json" 或 "url":"questions.json"
-    expect(swContent).toMatch(/(?:url|"url")\s*:\s*"questions\.json"/)
+    // questions.json 从预缓存中移除，改用 NetworkFirst 运行时策略
+    // 确保题库更新后不会因 SW 缓存而无法获取最新版本
+    expect(config).not.toMatch(/includeAssets[\s\S]*?questions\.json/)
+    expect(config).toMatch(/urlPattern[\s\S]*?questions/)
+    expect(config).toMatch(/handler[\s\S]*?NetworkFirst/)
   })
 })
 
